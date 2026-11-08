@@ -1,17 +1,19 @@
 import { WORKER_URL } from './config.js';
 
 export async function chat({ provider, model, messages, temperature = 0.5 }) {
+  // Usamos un proxy puente para evitar el bloqueo de tu ISP
+  const proxyUrl = 'https://corsproxy.io/?';
+  const targetUrl = encodeURIComponent(`${WORKER_URL}/api/chat`);
+
   let res;
   try {
-    res = await fetch(`${WORKER_URL}/api/chat`, {
+    res = await fetch(proxyUrl + targetUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ provider, model, messages, temperature }),
     });
   } catch (networkErr) {
-    throw new Error(
-      `No se pudo contactar con el Worker. Detalle: ${networkErr.message}`
-    );
+    throw new Error(`Fallo de red: ${networkErr.message}`);
   }
 
   if (!res.ok) {
@@ -23,7 +25,9 @@ export async function chat({ provider, model, messages, temperature = 0.5 }) {
 
 export async function checkHealth() {
   try {
-    const res = await fetch(`${WORKER_URL}/health`);
+    const proxyUrl = 'https://corsproxy.io/?';
+    const targetUrl = encodeURIComponent(`${WORKER_URL}/health`);
+    const res = await fetch(proxyUrl + targetUrl);
     return res.ok;
   } catch (e) {
     return false;
