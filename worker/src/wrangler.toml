@@ -1,0 +1,8 @@
+name = "ai-council-proxy"
+main = "src/index.js"
+compatibility_date = "2026-10-01"
+
+# No definas secretos aquí. Usa `wrangler secret put`.
+# Las variables no secretas pueden ir en [vars].
+[vars]
+ENVIRONMENT = "production"
