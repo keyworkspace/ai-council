@@ -1,0 +1,13 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>AI COUNCIL</title>
+  <script>
+    // Redirige cualquier ruta desconocida a index.html conservando la ruta
+    const path = window.location.pathname.replace(/^\/ai-council\//, '/');
+    window.location.replace('/ai-council/index.html' + (path !== '/' ? '#' + path : ''));
+  </script>
+</head>
+<body></body>
+</html>
