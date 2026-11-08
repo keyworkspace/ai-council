@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI COUNCIL — Deliberación multiagente</title>
+  <link rel="stylesheet" href="assets/css/styles.css">
+</head>
+<body>
+  <div id="app">
+    <!-- Panel lateral -->
+    <aside class="sidebar" id="sidebar">
+      <div class="logo">
+        <span class="logo-mark">⚖️</span>
+        <h1>AI COUNCIL</h1>
+      </div>
+      <button id="btn-new-room" class="btn-primary">+ Nueva sala</button>
+      <div class="section-title">Salas</div>
+      <ul id="room-list" class="room-list"></ul>
+      <div class="section-title">Participantes</div>
+      <ul id="agent-list" class="agent-list"></ul>
+    </aside>
+
+    <!-- Área principal -->
+    <main class="main">
+      <header class="room-header">
+        <div>
+          <h2 id="room-name">Selecciona o crea una sala</h2>
+          <p id="room-topic" class="topic">—</p>
+        </div>
+        <div class="room-actions">
+          <span id="room-status" class="badge">Inactiva</span>
+          <button id="btn-export" class="btn-ghost" title="Exportar conversación">⬇ Exportar</button>
+          <button id="btn-delete-room" class="btn-ghost danger" title="Eliminar sala">🗑</button>
+        </div>
+      </header>
+
+      <div id="messages" class="messages" aria-live="polite">
+        <div class="empty-state">
+          <p>🏛️ El consejo está en receso.</p>
+          <p>Crea una sala, define un tema y convoca a los participantes.</p>
+        </div>
+      </div>
+
+      <div class="composer">
+        <div class="composer-controls">
+          <select id="mode-select" title="Modalidad">
+            <option value="autonomous">Modo autónomo</option>
+            <option value="directed">Modo dirigido</option>
+          </select>
+          <select id="agent-select" title="Agente destinatario" disabled>
+            <option value="">— Agente —</option>
+          </select>
+          <label class="rounds-label">
+            Rondas:
+            <input type="number" id="max-rounds" value="3" min="1" max="10">
+          </label>
+          <button id="btn-stop" class="btn-ghost danger" disabled>⏹ Detener</button>
+        </div>
+        <div class="composer-input">
+          <textarea id="user-input" rows="2" placeholder="Plantea un tema o formula una pregunta al consejo…"></textarea>
+          <button id="btn-send" class="btn-primary">Enviar</button>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- Modal de nueva sala -->
+  <dialog id="dialog-room">
+    <form method="dialog" id="form-room">
+      <h3>Nueva sala de deliberación</h3>
+      <label>Nombre <input type="text" id="input-room-name" required maxlength="80"></label>
+      <label>Tema de discusión <textarea id="input-room-topic" rows="2" required></textarea></label>
+      <label>Participantes
+        <div id="agent-checkboxes" class="checkbox-grid"></div>
+      </label>
+      <menu>
+        <button type="button" id="btn-cancel-room" class="btn-ghost">Cancelar</button>
+        <button type="submit" class="btn-primary">Crear sala</button>
+      </menu>
+    </form>
+  </dialog>
+
+  <script type="module" src="assets/js/app.js"></script>
+</body>
+</html>
