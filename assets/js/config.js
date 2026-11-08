@@ -1,5 +1,5 @@
 // ⚠️ Cambia esta URL por la de tu Worker desplegado en Cloudflare
-export const WORKER_URL = 'https://ai-council-proxy.TU_SUBDOMINIO.workers.dev';
+export const WORKER_URL = 'https://ai-council-proxy.alexhrndz32.workers.dev';
 
 export const DEFAULT_MAX_ROUNDS = 3;
 
