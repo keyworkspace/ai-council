@@ -33,11 +33,10 @@ export default async function handler(req) {
         throw new Error('Faltan parámetros: provider, model o messages.');
       }
 
-      // 🚨 TRUCO ANTI-COLAPSO: Si el mensaje total supera los 30,000 caracteres, lo recortamos.
+      // Truncar si el mensaje es demasiado largo para evitar Timeout
       let safeMessages = messages;
       const totalChars = messages.reduce((acc, m) => acc + (m.content?.length || 0), 0);
       if (totalChars > 30000) {
-        // Dejamos el system prompt (el primero) y los últimos 3 mensajes
         safeMessages = [messages[0], ...messages.slice(-3)];
       }
 
@@ -46,7 +45,6 @@ export default async function handler(req) {
       let finalModel = model;
       let lastError = '';
 
-      // 1. Intentar con Groq
       if (provider === 'groq') {
         const apiKey = process.env.GROQ_API_KEY;
         if (!apiKey) throw new Error('GROQ_API_KEY no configurada.');
@@ -75,7 +73,6 @@ export default async function handler(req) {
         }
       }
 
-      // 2. Si Groq falló, intentar con Gemini
       if (!resultText) {
         const apiKey = process.env.GEMINI_API_KEY;
         if (apiKey) {
