@@ -1,11 +1,6 @@
 import { chat } from './api.js';
 import { getAgentById } from './agents.js';
 
-/**
- * Construye el historial para la IA.
- * Si el agente es el DIRECTOR, le pasamos el hilo completo.
- * Si es otro agente, le pasamos el hilo para que sepa de qué se habla.
- */
 function buildMessages(agent, history) {
   const sys = { role: 'system', content: agent.systemPrompt };
   const dialogue = history.map(m => ({
@@ -15,81 +10,85 @@ function buildMessages(agent, history) {
   return [sys, ...dialogue];
 }
 
+async function agentSpeak(agent, currentHistory, onMessage, onStatus, statusMsg, signal) {
+  if (signal?.aborted) return { text: '', needsUser: false, aborted: true };
+  onStatus(statusMsg);
+  
+  try {
+    const { text } = await chat({
+      provider: agent.provider, model: agent.model,
+      messages: buildMessages(agent, currentHistory), temperature: agent.temperature,
+    });
+    
+    if (signal?.aborted) return { text: '', needsUser: false, aborted: true };
+
+    let cleanText = text;
+    let needsUser = false;
+
+    if (text.includes('[PAUSA_USUARIO]')) {
+      needsUser = true;
+      cleanText = text.replace('[PAUSA_USUARIO]', '').trim();
+    }
+
+    const msg = { agentId: agent.id, agentName: agent.name, avatar: agent.avatar, text: cleanText };
+    currentHistory.push({ role: 'assistant', ...msg });
+    onMessage(msg);
+
+    return { text: cleanText, needsUser, aborted: false };
+  } catch (err) {
+    onMessage({ agentId: agent.id, agentName: agent.name, avatar: agent.avatar, text: `⚠️ Error: ${err.message}` });
+    return { text: '', needsUser: false, aborted: false };
+  }
+}
+
 export async function runAutonomous({ history, selectedAgentIds, maxRounds, onMessage, onStatus, signal }) {
   const agents = selectedAgentIds.map(getAgentById).filter(a => a && a.active);
   if (!agents.length) throw new Error('No hay agentes activos seleccionados.');
 
-  // Clonamos el historial para no mutar el original directamente
   let currentHistory = [...history];
 
-  // Apertura / Turno del DIRECTOR
+  // 1. El DIRECTOR abre el debate
   const director = agents.find(a => a.id === 'director');
   if (director) {
-    onStatus('El DIRECTOR toma la palabra…');
-    const { text } = await chat({
-      provider: director.provider, model: director.model,
-      messages: buildMessages(director, currentHistory), temperature: director.temperature,
-    });
-    if (signal?.aborted) return;
-    
-    // Limpiamos posibles etiquetas de pausa si el director se equivoca
-    const cleanText = text.replace('[PAUSA_USUARIO]', '').trim();
-    const msg = { agentId: director.id, agentName: director.name, avatar: director.avatar, text: cleanText };
-    currentHistory.push({ role: 'assistant', ...msg });
-    onMessage(msg);
+    const res = await agentSpeak(director, currentHistory, onMessage, onStatus, 'El DIRECTOR abre la sesión…', signal);
+    if (res.aborted || res.needsUser) return;
   }
 
-  // Rondas de debate
-  const speakingAgents = agents.filter(a => a.id !== 'director' && a.id !== 'asesor');
+  // 2. Rondas de debate
+  const analista = agents.find(a => a.id === 'analista');
+  const critico = agents.find(a => a.id === 'critico');
+  const estratega = agents.find(a => a.id === 'estratega');
+
   for (let ronda = 1; ronda <= maxRounds; ronda++) {
-    for (const agent of speakingAgents) {
-      if (signal?.aborted) { onStatus('Detenido por el usuario.'); return; }
-      onStatus(`Ronda ${ronda}/${maxRounds} · Habla ${agent.name}`);
-      
-      try {
-        const { text } = await chat({
-          provider: agent.provider, model: agent.model,
-          messages: buildMessages(agent, currentHistory), temperature: agent.temperature,
-        });
-        if (signal?.aborted) return;
+    // TURNO DEL ANALISTA
+    if (analista) {
+      const res = await agentSpeak(analista, currentHistory, onMessage, onStatus, `Ronda ${ronda} · Habla ${analista.name}`, signal);
+      if (res.aborted || res.needsUser) return;
+    }
 
-        let cleanText = text;
-        let needsUser = false;
+    // TURNO DEL CRÍTICO (Ataca al Analista)
+    if (critico) {
+      const res = await agentSpeak(critico, currentHistory, onMessage, onStatus, `Ronda ${ronda} · Habla ${critico.name}`, signal);
+      if (res.aborted || res.needsUser) return;
+    }
 
-        // 🚨 DETECCIÓN DE PAUSA: Si el agente pide opinión al usuario
-        if (text.includes('[PAUSA_USUARIO]')) {
-          needsUser = true;
-          cleanText = text.replace('[PAUSA_USUARIO]', '').trim();
-        }
+    // 🚨 CONTRA-RÉPLICA: El ANALISTA se defiende de las críticas
+    if (analista && critico) {
+      const res = await agentSpeak(analista, currentHistory, onMessage, onStatus, `Ronda ${ronda} · ${analista.name} responde a ${critico.name}`, signal);
+      if (res.aborted || res.needsUser) return;
+    }
 
-        const msg = { agentId: agent.id, agentName: agent.name, avatar: agent.avatar, text: cleanText };
-        currentHistory.push({ role: 'assistant', ...msg });
-        onMessage(msg);
-
-        if (needsUser) {
-          onStatus('El consejo espera tu intervención para continuar...');
-          return; // DETENEMOS EL DEBATE AQUÍ. Esperamos al usuario.
-        }
-
-      } catch (err) {
-        onMessage({ agentId: agent.id, agentName: agent.name, avatar: agent.avatar, text: `⚠️ Error: ${err.message}` });
-      }
+    // TURNO DEL ESTRATEGA
+    if (estratega) {
+      const res = await agentSpeak(estratega, currentHistory, onMessage, onStatus, `Ronda ${ronda} · Habla ${estratega.name}`, signal);
+      if (res.aborted || res.needsUser) return;
     }
   }
 
-  // Conclusión final (solo si terminaron las rondas sin pausas)
+  // 3. Conclusión final
   const asesor = agents.find(a => a.id === 'asesor');
   if (asesor && !signal?.aborted) {
-    onStatus('El ASESOR formula la conclusión…');
-    try {
-      const { text } = await chat({
-        provider: asesor.provider, model: asesor.model,
-        messages: buildMessages(asesor, currentHistory), temperature: asesor.temperature,
-      });
-      onMessage({ agentId: asesor.id, agentName: asesor.name, avatar: asesor.avatar, text });
-    } catch (err) {
-      onMessage({ agentId: asesor.id, agentName: asesor.name, avatar: asesor.avatar, text: `⚠️ Error: ${err.message}` });
-    }
+    await agentSpeak(asesor, currentHistory, onMessage, onStatus, 'El ASESOR formula la conclusión…', signal);
   }
   onStatus('Sesión finalizada.');
 }
