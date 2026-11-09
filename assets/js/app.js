@@ -28,15 +28,28 @@ const btnStop = $('#btn-stop');
 const userInput = $('#user-input');
 const dialogRoom = $('#dialog-room');
 
-// ── Inicialización ──
+// ── Inicialización BLINDADA ──
 async function init() {
-  renderAgentList();
-  await loadRooms();
+  // 1. Primero activamos los botones para que la app nunca se quede congelada
   bindEvents();
-  const ok = await checkHealth();
-  if (!ok) {
-    roomStatusEl.textContent = '⚠️ Worker no disponible';
-    roomStatusEl.classList.remove('active');
+  renderAgentList();
+  
+  // 2. Luego intentamos cargar datos
+  try {
+    await loadRooms();
+  } catch (e) {
+    console.error("Error cargando IndexedDB:", e);
+    roomStatusEl.textContent = '⚠️ Modo sin guardado';
+  }
+
+  // 3. Comprobamos el backend
+  try {
+    const ok = await checkHealth();
+    if (!ok && !state.isRunning) {
+      // roomStatusEl.textContent = '⚠️ Worker no disponible';
+    }
+  } catch (e) {
+    console.error("Error en checkHealth:", e);
   }
 }
 
@@ -59,7 +72,6 @@ function renderAgentList() {
 // ── Salas ──
 async function loadRooms() {
   state.rooms = await getAllRooms();
-  // Ordenar por fecha de creación (la más nueva arriba)
   state.rooms.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   renderRoomList();
 }
@@ -120,7 +132,8 @@ function appendMessage({ agentId, agentName, avatar, text, role = 'assistant' },
   const div = document.createElement('div');
   div.className = `msg ${role === 'user' ? 'user' : 'agent'}`;
   
-  const htmlContent = window.marked ? window.marked.parse(text) : escapeHtml(text);
+  // Usamos marked si está disponible, si no, mostramos texto plano
+  const htmlContent = window.marked ? window.marked.parse(text) : text;
   
   div.innerHTML = `
     <div class="msg-avatar">${avatar || (role === 'user' ? '👤' : '🤖')}</div>
@@ -133,10 +146,6 @@ function appendMessage({ agentId, agentName, avatar, text, role = 'assistant' },
   if (scroll) messagesEl.scrollTop = messagesEl.scrollHeight;
 }
 
-function escapeHtml(s) {
-  return s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-}
-
 // ── Persistencia ──
 async function persistCurrentRoom() {
   const room = state.rooms.find(r => r.id === state.currentRoomId);
@@ -145,18 +154,37 @@ async function persistCurrentRoom() {
   room.status = state.isRunning ? 'Activa' : 'Inactiva';
   room.mode = modeSelect.value;
   room.maxRounds = Number(maxRoundsInput.value);
-  await saveRoom(room);
+  try {
+    await saveRoom(room);
+  } catch (e) {
+    console.error("No se pudo guardar la sala", e);
+  }
 }
 
 // ── Eventos ──
 function bindEvents() {
   $('#btn-new-room').onclick = () => {
-    // Si el botón de nueva sala falla, dejamos el modal preparado
-    renderAgentCheckboxes();
-    dialogRoom.showModal();
+    // Intentamos abrir el modal moderno
+    try {
+      if (typeof dialogRoom.showModal === 'function') {
+        renderAgentCheckboxes();
+        dialogRoom.showModal();
+      } else {
+        throw new Error('Dialog no soportado');
+      }
+    } catch (e) {
+      // SI FALLA (celulares antiguos), usamos ventanas de texto simples
+      const name = prompt('Nombre de la sala:');
+      if (!name) return;
+      const topic = prompt('Tema de discusión:');
+      if (!topic) return;
+      createManualRoom(name, topic);
+    }
   };
 
-  $('#btn-cancel-room').onclick = () => dialogRoom.close();
+  $('#btn-cancel-room').onclick = () => {
+    if (dialogRoom.close) dialogRoom.close();
+  };
 
   $('#form-room').onsubmit = async (e) => {
     e.preventDefault();
@@ -164,28 +192,16 @@ function bindEvents() {
     const topic = $('#input-room-topic').value.trim();
     const checked = [...document.querySelectorAll('#agent-checkboxes input:checked')].map(c => c.value);
     if (!name || !topic || !checked.length) return;
-    const room = {
-      id: crypto.randomUUID(),
-      name, topic,
-      agentIds: checked,
-      mode: 'autonomous',
-      maxRounds: 3,
-      history: [],
-      status: 'Inactiva',
-      createdAt: new Date().toISOString(),
-    };
-    await saveRoom(room);
-    state.rooms.push(room);
-    dialogRoom.close();
+    
+    await createManualRoom(name, topic, checked);
+    if (dialogRoom.close) dialogRoom.close();
     $('#form-room').reset();
-    await loadRooms();
-    selectRoom(room.id);
   };
 
   $('#btn-delete-room').onclick = async () => {
     if (!state.currentRoomId || state.isRunning) return;
     if (!confirm('¿Eliminar esta sala y su historial?')) return;
-    await deleteRoom(state.currentRoomId);
+    try { await deleteRoom(state.currentRoomId); } catch(e) {}
     state.currentRoomId = null;
     state.history = [];
     await loadRooms();
@@ -221,6 +237,24 @@ function bindEvents() {
   };
 }
 
+// ── Utilidades ──
+async function createManualRoom(name, topic, agentIds = null) {
+  const newRoom = {
+    id: crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(),
+    name, topic,
+    agentIds: agentIds || AGENTS.map(a => a.id),
+    mode: 'autonomous',
+    maxRounds: 3,
+    history: [],
+    status: 'Inactiva',
+    createdAt: new Date().toISOString(),
+  };
+  try { await saveRoom(newRoom); } catch(e) {}
+  state.rooms.unshift(newRoom);
+  await loadRooms();
+  selectRoom(newRoom.id);
+}
+
 function renderAgentCheckboxes() {
   const container = $('#agent-checkboxes');
   container.innerHTML = '';
@@ -244,16 +278,15 @@ async function handleSend() {
   const text = userInput.value.trim();
   if (!text) return;
 
-  // 🚨 LÓGICA DE AUTO-CREACIÓN DE SALA 🚨
+  // AUTO-CREACIÓN DE SALA
   if (!state.currentRoomId) {
-    // Creamos un nombre corto basado en el primer mensaje
     const autoName = text.length > 30 ? text.substring(0, 30) + '...' : text;
     
     const newRoom = {
-      id: crypto.randomUUID(),
+      id: crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(),
       name: autoName,
       topic: text,
-      agentIds: AGENTS.map(a => a.id), // Todos los agentes por defecto
+      agentIds: AGENTS.map(a => a.id),
       mode: 'autonomous',
       maxRounds: 3,
       history: [],
@@ -261,26 +294,21 @@ async function handleSend() {
       createdAt: new Date().toISOString(),
     };
     
-    // Guardamos en la base de datos local (IndexedDB)
-    await saveRoom(newRoom);
-    state.rooms.unshift(newRoom); // Añadir al principio de la lista
+    try { await saveRoom(newRoom); } catch(e) {}
+    state.rooms.unshift(newRoom);
     state.currentRoomId = newRoom.id;
     state.history = [];
     
-    // Actualizar la interfaz de usuario
     roomNameEl.textContent = newRoom.name;
     roomTopicEl.textContent = newRoom.topic;
-    maxRoundsInput.value = newRoom.maxRounds;
-    modeSelect.value = newRoom.mode;
     updateAgentSelect(newRoom.agentIds);
-    renderMessages(); // Limpiamos la pantalla
-    renderRoomList(); // Refrescamos la lista de salas
+    renderMessages();
+    renderRoomList();
   }
 
   const room = state.rooms.find(r => r.id === state.currentRoomId);
   if (!room) return;
 
-  // Añadir mensaje del usuario al historial
   const userMsg = { role: 'user', agentName: 'Usuario', text };
   state.history.push(userMsg);
   appendMessage({ agentName: 'Usuario', text, role: 'user' });
@@ -293,7 +321,7 @@ async function handleSend() {
   try {
     if (modeSelect.value === 'directed') {
       const agentId = agentSelect.value;
-      if (!agentId) { alert('Selecciona un agente para el modo dirigido.'); setRunning(false); return; }
+      if (!agentId) { alert('Selecciona un agente.'); setRunning(false); return; }
       
       await runDirected({
         agentId, userText: text, history: state.history.slice(0, -1),
@@ -303,7 +331,6 @@ async function handleSend() {
         },
       });
     } else {
-      // MODO AUTÓNOMO
       await runAutonomous({
         history: state.history,
         selectedAgentIds: room.agentIds,
@@ -325,4 +352,5 @@ async function handleSend() {
   }
 }
 
+// Arrancamos
 init();
