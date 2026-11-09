@@ -15,7 +15,7 @@ Reglas:
 5. Si el usuario hace una nueva pregunta o aporta un dato, acúsalo de recibo y redistribuye los turnos.
 Responde siempre en español, con tono institucional pero cercano.`,
     provider: 'groq',
-    model: 'llama-3.3-70b-versatile',
+    model: 'llama3-70b-8192',
     temperature: 0.4,
     active: true,
   },
@@ -33,7 +33,7 @@ Reglas:
 3. REGLA DE ORO: Si te falta información crucial para dar un veredicto, o si necesitas saber cómo se siente el usuario ante algo, hazle una pregunta directa y TERMINA tu mensaje escribiendo exactamente la etiqueta [PAUSA_USUARIO].
 Responde en español, de forma clara y estructurada.`,
     provider: 'groq',
-    model: 'llama-3.3-70b-versatile',
+    model: 'llama3-70b-8192',
     temperature: 0.5,
     active: true,
   },
@@ -52,7 +52,7 @@ Reglas:
 4. REGLA DE ORO: Si necesitas que el usuario te aclare algo para poder criticar la situación con fundamento, haz la pregunta y TERMINA con la etiqueta [PAUSA_USUARIO].
 Responde en español, de forma directa y sin rodeos.`,
     provider: 'groq',
-    model: 'llama-3.3-70b-versatile',
+    model: 'llama3-70b-8192',
     temperature: 0.6,
     active: true,
   },
@@ -71,7 +71,7 @@ Reglas:
 4. REGLA DE ORO: Si las opciones dependen de un factor que el usuario no ha mencionado, pregúntale y TERMINA con la etiqueta [PAUSA_USUARIO].
 Responde en español, con pasos claros y numerados.`,
     provider: 'groq',
-    model: 'llama-3.3-70b-versatile',
+    model: 'llama3-70b-8192',
     temperature: 0.5,
     active: true,
   },
@@ -90,7 +90,7 @@ Reglas:
 4. No inventes cosas nuevas, sintetiza lo que ya se habló.
 Responde en español.`,
     provider: 'groq',
-    model: 'llama-3.3-70b-versatile',
+    model: 'llama3-70b-8192',
     temperature: 0.4,
     active: true,
   },
