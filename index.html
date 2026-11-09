@@ -3,12 +3,18 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  
+  <!-- 🚨 ETIQUETAS PARA FORZAR ACTUALIZACIÓN EN MÓVILES 🚨 -->
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
+  
   <title>AI COUNCIL — Deliberación multiagente</title>
   
-  <!-- El ?v=3 obliga al navegador a descargar la versión más reciente del CSS -->
-  <link rel="stylesheet" href="assets/css/styles.css?v=3">
+  <!-- Versión 99 para forzar la descarga del CSS nuevo -->
+  <link rel="stylesheet" href="assets/css/styles.css?v=99">
   
-  <!-- Librería para convertir el texto Markdown de las IAs en HTML bonito -->
+  <!-- Librería para formatear texto -->
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 </head>
 <body>
@@ -70,7 +76,7 @@
     </main>
   </div>
 
-  <!-- Modal de nueva sala (se mantiene por si quieres crearlas manualmente) -->
+  <!-- Modal de nueva sala -->
   <dialog id="dialog-room">
     <form method="dialog" id="form-room">
       <h3>Nueva sala de deliberación</h3>
@@ -86,7 +92,7 @@
     </form>
   </dialog>
 
-  <!-- El ?v=3 obliga al navegador a descargar la versión más reciente del JS -->
-  <script type="module" src="assets/js/app.js?v=3"></script>
+  <!-- Versión 99 para forzar la descarga del JS nuevo -->
+  <script type="module" src="assets/js/app.js?v=99"></script>
 </body>
 </html>
