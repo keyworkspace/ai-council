@@ -1,4 +1,4 @@
-export const WORKER_URL = 'https://ai-council-inky.vercel.app/api/chat';
+export const WORKER_URL = 'https://ai-council-inky.vercel.app';
 
 export const DEFAULT_MAX_ROUNDS = 3;
 
