@@ -1,4 +1,3 @@
-
 import { AGENTS, getActiveAgents, getAgentById } from './agents.js';
 import { runAutonomous, runDirected } from './orchestrator.js';
 import { getAllRooms, saveRoom, deleteRoom } from './db.js';
@@ -119,7 +118,7 @@ function appendMessage({ agentId, agentName, avatar, text, role = 'assistant' },
   const div = document.createElement('div');
   div.className = `msg ${role === 'user' ? 'user' : 'agent'}`;
   
-  // Convertimos Markdown a HTML para que no salgan los asteriscos
+  // Convertimos el texto de Markdown a HTML usando marked
   const htmlContent = window.marked ? window.marked.parse(text) : escapeHtml(text);
   
   div.innerHTML = `
@@ -251,6 +250,7 @@ async function handleSend() {
   const room = state.rooms.find(r => r.id === state.currentRoomId);
   if (!room) return;
 
+  // Añadir mensaje del usuario al historial
   const userMsg = { role: 'user', agentName: 'Usuario', text };
   state.history.push(userMsg);
   appendMessage({ agentName: 'Usuario', text, role: 'user' });
@@ -264,18 +264,18 @@ async function handleSend() {
     if (modeSelect.value === 'directed') {
       const agentId = agentSelect.value;
       if (!agentId) { alert('Selecciona un agente para el modo dirigido.'); setRunning(false); return; }
-      const agent = getAgentById(agentId);
-      await runDirected({
+      
+      const responseText = await runDirected({
         agentId, userText: text, history: state.history.slice(0, -1),
         onMessage: (m) => {
           appendMessage(m);
           state.history.push({ role: 'assistant', ...m });
         },
       });
-      await persistCurrentRoom();
     } else {
+      // MODO AUTÓNOMO: Pasamos TODO el historial, no solo el tema
       await runAutonomous({
-        topic: room.topic,
+        history: state.history, // <--- Aquí pasamos el hilo completo
         selectedAgentIds: room.agentIds,
         maxRounds: Number(maxRoundsInput.value) || 3,
         onMessage: (m) => {
@@ -285,8 +285,8 @@ async function handleSend() {
         onStatus: (s) => { roomStatusEl.textContent = s; },
         signal,
       });
-      await persistCurrentRoom();
     }
+    await persistCurrentRoom();
   } catch (err) {
     appendMessage({ agentName: 'Sistema', avatar: '⚠️', text: `Error: ${err.message}` });
   } finally {
