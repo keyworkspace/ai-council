@@ -32,8 +32,6 @@ async function agentSpeak(agent, currentHistory, onMessage, onStatus, statusMsg,
     let cleanText = text;
     let needsUser = false;
 
-    // 🚨 LIMPIADOR DE ALUCINACIONES 🚨
-    // Borra pensamientos internos o borradores si el modelo se confunde.
     cleanText = cleanText.replace(/\[DRAFT SECRETO[\s\S]*?-----+/gi, '');
     cleanText = cleanText.replace(/\[ESTRATEGA\]:\s*/gi, '');
     cleanText = cleanText.replace(/\[ANALISTA\]:\s*/gi, '');
@@ -64,36 +62,39 @@ export async function runAutonomous({ history, selectedAgentIds, maxRounds, onMe
   const analista = agents.find(a => a.id === 'analista');
   const critico = agents.find(a => a.id === 'critico');
   const estratega = agents.find(a => a.id === 'estratega');
-  const asesor = agents.find(a => a.id === 'asesor');
+  // Fallback: si no hay asesor, el director da la conclusión final
+  const asesor = agents.find(a => a.id === 'asesor') || agents.find(a => a.id === 'director');
 
   for (let ronda = 1; ronda <= maxRounds; ronda++) {
+    // El director abre o modera
     if (director) {
-      const res = await agentSpeak(director, currentHistory, onMessage, onStatus, `Ronda ${ronda} · El DIRECTOR modera...`, signal);
+      const res = await agentSpeak(director, currentHistory, onMessage, onStatus, `Ronda ${ronda} · J.A.R.V.I.S. modera...`, signal);
       if (res.aborted || res.needsUser) return;
     }
 
     if (analista) {
-      const res = await agentSpeak(analista, currentHistory, onMessage, onStatus, `Ronda ${ronda} · Habla ${analista.name}`, signal);
+      const res = await agentSpeak(analista, currentHistory, onMessage, onStatus, `Ronda ${ronda} · Habla F.R.I.D.A.Y.`, signal);
       if (res.aborted || res.needsUser) return;
     }
 
     if (critico) {
-      const res = await agentSpeak(critico, currentHistory, onMessage, onStatus, `Ronda ${ronda} · Habla ${critico.name}`, signal);
+      const res = await agentSpeak(critico, currentHistory, onMessage, onStatus, `Ronda ${ronda} · Habla ULTRON`, signal);
       if (res.aborted || res.needsUser) return;
     }
 
     if (analista && critico) {
-      const res = await agentSpeak(analista, currentHistory, onMessage, onStatus, `Ronda ${ronda} · ${analista.name} responde...`, signal);
+      const res = await agentSpeak(analista, currentHistory, onMessage, onStatus, `Ronda ${ronda} · F.R.I.D.A.Y. responde a ULTRON`, signal);
       if (res.aborted || res.needsUser) return;
     }
 
     if (estratega) {
-      const res = await agentSpeak(estratega, currentHistory, onMessage, onStatus, `Ronda ${ronda} · Habla ${estratega.name}`, signal);
+      const res = await agentSpeak(estratega, currentHistory, onMessage, onStatus, `Ronda ${ronda} · Habla E.D.I.T.H.`, signal);
       if (res.aborted || res.needsUser) return;
     }
 
+    // Si es la última ronda, el Asesor (o el Director) concluye
     if (ronda === maxRounds && asesor) {
-      const res = await agentSpeak(asesor, currentHistory, onMessage, onStatus, `El ASESOR concluye...`, signal);
+      const res = await agentSpeak(asesor, currentHistory, onMessage, onStatus, `El ASESOR formula la conclusión...`, signal);
       if (res.aborted || res.needsUser) return;
     }
   }
