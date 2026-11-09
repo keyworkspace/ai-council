@@ -3,19 +3,29 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  
-  <!-- 🚨 ETIQUETAS PARA FORZAR ACTUALIZACIÓN EN MÓVILES 🚨 -->
-  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-  <meta http-equiv="Pragma" content="no-cache">
-  <meta http-equiv="Expires" content="0">
-  
   <title>AI COUNCIL — Deliberación multiagente</title>
-  
-  <!-- Versión 99 para forzar la descarga del CSS nuevo -->
-  <link rel="stylesheet" href="assets/css/styles.css?v=99">
-  
-  <!-- Librería para formatear texto -->
+
+  <!-- Cargamos la librería marked.js primero para que esté lista antes de app.js -->
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
+  <script>
+    // 🚨 CACHE BUSTER AUTOMÁTICO 🚨
+    // Esto genera un número de versión único basado en la hora exacta actual.
+    // Obliga al navegador a descargar los archivos nuevos siempre.
+    const autoVersion = new Date().getTime();
+
+    // Carga el CSS con la versión automática
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = 'assets/css/styles.css?v=' + autoVersion;
+    document.head.appendChild(link);
+
+    // Carga el JS con la versión automática (type="module" lo hace asíncrono)
+    const script = document.createElement('script');
+    script.type = 'module';
+    script.src = 'assets/js/app.js?v=' + autoVersion;
+    document.head.appendChild(script);
+  </script>
 </head>
 <body>
   <div id="app">
@@ -91,8 +101,5 @@
       </menu>
     </form>
   </dialog>
-
-  <!-- Versión 99 para forzar la descarga del JS nuevo -->
-  <script type="module" src="assets/js/app.js?v=99"></script>
 </body>
 </html>
