@@ -1,3 +1,4 @@
+
 import { AGENTS, getActiveAgents, getAgentById } from './agents.js';
 import { runAutonomous, runDirected } from './orchestrator.js';
 import { getAllRooms, saveRoom, deleteRoom } from './db.js';
@@ -7,7 +8,7 @@ import { checkHealth } from './api.js';
 const state = {
   rooms: [],
   currentRoomId: null,
-  history: [],            // [{role, agentId, agentName, text}]
+  history: [],            
   abortController: null,
   isRunning: false,
 };
@@ -50,7 +51,7 @@ function renderAgentList() {
         <span class="agent-dot ${a.active ? '' : 'off'}"></span>
         <span>${a.avatar} ${a.name}</span>
       </span>
-      <small style="color:var(--cold-gray);font-size:0.65rem">${a.provider}</small>
+      <small style="color:var(--text-dim);font-size:0.65rem">${a.provider}</small>
     `;
     agentListEl.appendChild(li);
   });
@@ -117,11 +118,15 @@ function renderMessages() {
 function appendMessage({ agentId, agentName, avatar, text, role = 'assistant' }, scroll = true) {
   const div = document.createElement('div');
   div.className = `msg ${role === 'user' ? 'user' : 'agent'}`;
+  
+  // Convertimos Markdown a HTML para que no salgan los asteriscos
+  const htmlContent = window.marked ? window.marked.parse(text) : escapeHtml(text);
+  
   div.innerHTML = `
     <div class="msg-avatar">${avatar || (role === 'user' ? '👤' : '🤖')}</div>
     <div class="msg-body">
       <div class="msg-header">${agentName || 'Usuario'}</div>
-      <div class="msg-text">${escapeHtml(text)}</div>
+      <div class="msg-text">${htmlContent}</div>
     </div>
   `;
   messagesEl.appendChild(div);
@@ -246,7 +251,6 @@ async function handleSend() {
   const room = state.rooms.find(r => r.id === state.currentRoomId);
   if (!room) return;
 
-  // Añadir mensaje del usuario al historial
   const userMsg = { role: 'user', agentName: 'Usuario', text };
   state.history.push(userMsg);
   appendMessage({ agentName: 'Usuario', text, role: 'user' });
@@ -261,7 +265,7 @@ async function handleSend() {
       const agentId = agentSelect.value;
       if (!agentId) { alert('Selecciona un agente para el modo dirigido.'); setRunning(false); return; }
       const agent = getAgentById(agentId);
-      const responseText = await runDirected({
+      await runDirected({
         agentId, userText: text, history: state.history.slice(0, -1),
         onMessage: (m) => {
           appendMessage(m);
@@ -270,7 +274,6 @@ async function handleSend() {
       });
       await persistCurrentRoom();
     } else {
-      // Modo autónomo
       await runAutonomous({
         topic: room.topic,
         selectedAgentIds: room.agentIds,
