@@ -2,9 +2,12 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>AI COUNCIL — Deliberación multiagente</title>
-  <link rel="stylesheet" href="assets/css/styles.css">
+  
+  <!-- El ?v=3 obliga al navegador a descargar la versión más reciente del CSS -->
+  <link rel="stylesheet" href="assets/css/styles.css?v=3">
+  
   <!-- Librería para convertir el texto Markdown de las IAs en HTML bonito -->
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 </head>
@@ -40,7 +43,7 @@
       <div id="messages" class="messages" aria-live="polite">
         <div class="empty-state">
           <p>🏛️ El consejo está en receso.</p>
-          <p>Crea una sala, define un tema y convoca a los participantes.</p>
+          <p>Plantea un tema para comenzar.</p>
         </div>
       </div>
 
@@ -67,7 +70,7 @@
     </main>
   </div>
 
-  <!-- Modal de nueva sala -->
+  <!-- Modal de nueva sala (se mantiene por si quieres crearlas manualmente) -->
   <dialog id="dialog-room">
     <form method="dialog" id="form-room">
       <h3>Nueva sala de deliberación</h3>
@@ -83,6 +86,7 @@
     </form>
   </dialog>
 
-  <script type="module" src="assets/js/app.js"></script>
+  <!-- El ?v=3 obliga al navegador a descargar la versión más reciente del JS -->
+  <script type="module" src="assets/js/app.js?v=3"></script>
 </body>
 </html>
