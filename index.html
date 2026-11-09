@@ -3,24 +3,20 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>AI COUNCIL — Deliberación multiagente</title>
-
-  <!-- Cargamos la librería marked.js primero para que esté lista antes de app.js -->
+  <title>AI COUNCIL — Stark Industries</title>
+  
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
+  
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-
   <script>
     // 🚨 CACHE BUSTER AUTOMÁTICO 🚨
-    // Esto genera un número de versión único basado en la hora exacta actual.
-    // Obliga al navegador a descargar los archivos nuevos siempre.
     const autoVersion = new Date().getTime();
-
-    // Carga el CSS con la versión automática
     const link = document.createElement('link');
     link.rel = 'stylesheet';
     link.href = 'assets/css/styles.css?v=' + autoVersion;
     document.head.appendChild(link);
-
-    // Carga el JS con la versión automática (type="module" lo hace asíncrono)
     const script = document.createElement('script');
     script.type = 'module';
     script.src = 'assets/js/app.js?v=' + autoVersion;
@@ -31,73 +27,85 @@
   <div id="app">
     <!-- Panel lateral -->
     <aside class="sidebar" id="sidebar">
-      <div class="logo">
-        <span class="logo-mark">⚖️</span>
-        <h1>AI COUNCIL</h1>
+      <div class="logo-container">
+        <div class="logo-icon">⚡</div>
+        <div>
+          <h1>STARK COUNCIL</h1>
+          <span class="subtitle">Deliberación Multiagente</span>
+        </div>
       </div>
-      <button id="btn-new-room" class="btn-primary">+ Nueva sala</button>
-      <div class="section-title">Salas</div>
+      
+      <button id="btn-new-room" class="btn-primary">
+        <span class="icon">+</span> Nueva Sesión
+      </button>
+      
+      <div class="section-title">Salas Activas</div>
       <ul id="room-list" class="room-list"></ul>
-      <div class="section-title">Participantes</div>
+      
+      <div class="section-title">Personal Asignado</div>
       <ul id="agent-list" class="agent-list"></ul>
     </aside>
 
     <!-- Área principal -->
     <main class="main">
       <header class="room-header">
-        <div>
-          <h2 id="room-name">Selecciona o crea una sala</h2>
+        <div class="header-info">
+          <h2 id="room-name">Selecciona o crea una sesión</h2>
           <p id="room-topic" class="topic">—</p>
         </div>
         <div class="room-actions">
-          <span id="room-status" class="badge">Inactiva</span>
-          <button id="btn-export" class="btn-ghost" title="Exportar conversación">⬇ Exportar</button>
-          <button id="btn-delete-room" class="btn-ghost danger" title="Eliminar sala">🗑</button>
+          <span id="room-status" class="badge">En espera</span>
+          <button id="btn-export" class="btn-icon" title="Exportar">⬇</button>
+          <button id="btn-delete-room" class="btn-icon danger" title="Eliminar">🗑</button>
         </div>
       </header>
 
       <div id="messages" class="messages" aria-live="polite">
         <div class="empty-state">
-          <p>🏛️ El consejo está en receso.</p>
-          <p>Plantea un tema para comenzar.</p>
+          <div class="empty-icon">🛸</div>
+          <h3>Sistemas en espera</h3>
+          <p>Envía un comunicado para iniciar la deliberación de las IAs.</p>
         </div>
       </div>
 
       <div class="composer">
         <div class="composer-controls">
-          <select id="mode-select" title="Modalidad">
-            <option value="autonomous">Modo autónomo</option>
-            <option value="directed">Modo dirigido</option>
+          <select id="mode-select" class="tech-select">
+            <option value="autonomous">Modo Autónomo</option>
+            <option value="directed">Modo Dirigido</option>
           </select>
-          <select id="agent-select" title="Agente destinatario" disabled>
+          <select id="agent-select" class="tech-select" disabled>
             <option value="">— Agente —</option>
           </select>
-          <label class="rounds-label">
-            Rondas:
+          <div class="rounds-input">
+            <label>Ciclos</label>
             <input type="number" id="max-rounds" value="3" min="1" max="10">
-          </label>
-          <button id="btn-stop" class="btn-ghost danger" disabled>⏹ Detener</button>
+          </div>
+          <button id="btn-stop" class="btn-icon danger" disabled title="Detener">⏹</button>
         </div>
-        <div class="composer-input">
-          <textarea id="user-input" rows="2" placeholder="Plantea un tema o formula una pregunta al consejo…"></textarea>
-          <button id="btn-send" class="btn-primary">Enviar</button>
+        
+        <div class="composer-input-wrapper">
+          <textarea id="user-input" rows="1" placeholder="Escribe un comunicado para el consejo..."></textarea>
+          <button id="btn-send" class="btn-send">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+          </button>
         </div>
       </div>
     </main>
   </div>
 
   <!-- Modal de nueva sala -->
-  <dialog id="dialog-room">
+  <dialog id="dialog-room" class="tech-dialog">
     <form method="dialog" id="form-room">
-      <h3>Nueva sala de deliberación</h3>
-      <label>Nombre <input type="text" id="input-room-name" required maxlength="80"></label>
-      <label>Tema de discusión <textarea id="input-room-topic" rows="2" required></textarea></label>
-      <label>Participantes
+      <h3>Inicializar Nueva Sesión</h3>
+      <label>Identificador de la Sala <input type="text" id="input-room-name" required maxlength="80" placeholder="Ej. Análisis de Proyecto"></label>
+      <label>Directriz / Tema <textarea id="input-room-topic" rows="3" required placeholder="Describe el problema o situación..."></textarea></label>
+      <label>Seleccionar Agentes
         <div id="agent-checkboxes" class="checkbox-grid"></div>
       </label>
       <menu>
         <button type="button" id="btn-cancel-room" class="btn-ghost">Cancelar</button>
-        <button type="submit" class="btn-primary">Crear sala</button>
+        <button type="submit" class="btn-primary">Iniciar</button>
       </menu>
     </form>
   </dialog>
