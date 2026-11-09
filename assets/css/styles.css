@@ -2,15 +2,16 @@
   /* Paleta estilo Apple Dark Mode */
   --bg: #000000;
   --bg-gradient: radial-gradient(circle at 50% -20%, #1c1c1e 0%, #000000 100%);
-  --surface: rgba(28, 28, 30, 0.6); /* Cristal oscuro */
+  --surface: rgba(28, 28, 30, 0.6);
   --surface-hover: rgba(44, 44, 46, 0.8);
   --surface-active: rgba(58, 58, 60, 0.9);
   --border: rgba(255, 255, 255, 0.08);
   --border-light: rgba(255, 255, 255, 0.15);
   
-  /* Acento Dorado Premium */
-  --accent: #d4af37;
-  --accent-gradient: linear-gradient(135deg, #f3d060 0%, #b8860b 100%);
+  /* Acento Celeste / Azul (Estilo iOS) */
+  --accent: #0A84FF;
+  --accent-gradient: linear-gradient(135deg, #5AC8FA 0%, #0A84FF 100%);
+  --accent-glow: rgba(10, 132, 255, 0.3);
   
   --text: #f5f5f7;
   --text-dim: #86868b;
@@ -61,7 +62,7 @@ body {
 }
 
 .logo { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.5rem; }
-.logo-mark { font-size: 1.8rem; filter: drop-shadow(0 0 10px rgba(212, 175, 55, 0.3)); }
+.logo-mark { font-size: 1.8rem; filter: drop-shadow(0 0 10px var(--accent-glow)); }
 .logo h1 { font-size: 1.2rem; letter-spacing: -0.02em; color: var(--text); font-weight: 700; }
 .section-title { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-dim); margin-top: 0.5rem; font-weight: 600; }
 
@@ -92,10 +93,10 @@ body {
 }
 .btn-primary { 
   background: var(--accent-gradient); 
-  color: #000; 
-  box-shadow: 0 4px 15px rgba(212, 175, 55, 0.3);
+  color: #fff; /* Texto blanco para contrastar con el azul */
+  box-shadow: 0 4px 15px var(--accent-glow);
 }
-.btn-primary:hover { opacity: 0.9; transform: scale(1.02); box-shadow: 0 6px 20px rgba(212, 175, 55, 0.4); }
+.btn-primary:hover { opacity: 0.9; transform: scale(1.02); box-shadow: 0 6px 20px var(--accent-glow); }
 .btn-primary:active { transform: scale(0.96); }
 .btn-primary:disabled, .btn-ghost:disabled { opacity: 0.3; cursor: not-allowed; transform: none; box-shadow: none; }
 
@@ -138,7 +139,7 @@ body {
   background: rgba(255,255,255,0.1); color: var(--text-dim);
   border: 1px solid var(--border);
 }
-.badge.active { background: rgba(212, 175, 55, 0.15); color: var(--accent); border-color: rgba(212, 175, 55, 0.3); }
+.badge.active { background: rgba(10, 132, 255, 0.15); color: var(--accent); border-color: var(--accent-glow); }
 
 /* ── Mensajes (Burbujas iMessage) ── */
 .messages { flex: 1; overflow-y: auto; padding: 1.5rem; display: flex; flex-direction: column; gap: 1.25rem; scroll-behavior: smooth; }
@@ -165,15 +166,22 @@ body {
 }
 .msg.user .msg-body { 
   background: var(--accent-gradient); 
-  color: #000; 
+  color: #fff; /* Texto blanco para el azul */
   border-radius: 18px; 
   border-top-right-radius: 4px;
   border: none;
-  box-shadow: 0 4px 15px rgba(212, 175, 55, 0.2);
+  box-shadow: 0 4px 15px var(--accent-glow);
 }
 .msg-header { font-size: 0.75rem; font-weight: 600; color: var(--accent); margin-bottom: 0.3rem; }
-.msg.user .msg-header { color: rgba(0,0,0,0.6); }
+.msg.user .msg-header { color: rgba(255,255,255,0.8); }
 .msg-text { font-size: 0.95rem; line-height: 1.5; white-space: pre-wrap; }
+
+/* Estilos para el Markdown generado por marked.js */
+.msg-text p { margin-bottom: 0.5rem; }
+.msg-text p:last-child { margin-bottom: 0; }
+.msg-text strong { font-weight: 600; }
+.msg-text ul, .msg-text ol { padding-left: 1.2rem; margin-top: 0.5rem; margin-bottom: 0.5rem; }
+.msg-text li { margin-bottom: 0.2rem; }
 
 .msg.thinking .msg-text::after { content: '▍'; animation: blink 1s step-end infinite; color: var(--accent); }
 
@@ -204,7 +212,7 @@ body {
   transition: all 0.3s ease;
   box-shadow: 0 4px 20px rgba(0,0,0,0.2);
 }
-.composer-input:focus-within { border-color: rgba(212, 175, 55, 0.5); box-shadow: 0 4px 25px rgba(212, 175, 55, 0.1); }
+.composer-input:focus-within { border-color: var(--accent-glow); box-shadow: 0 4px 25px var(--accent-glow); }
 
 #user-input {
   flex: 1; resize: none; background: transparent; color: var(--text);
@@ -218,7 +226,6 @@ body {
   display: flex; align-items: center; justify-content: center;
   font-size: 1.2rem; flex-shrink: 0;
 }
-/* Cambiamos el texto del botón a un icono de flecha para estilo Apple */
 #btn-send::after { content: '↑'; font-weight: bold; }
 #btn-send { font-size: 0; } 
 #btn-send::after { font-size: 1.2rem; }
@@ -251,27 +258,44 @@ dialog menu { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top:
   #app { flex-direction: column; padding: 0; gap: 0; }
   
   .sidebar {
-    width: 100%; min-width: 0; max-height: 170px;
+    width: 100%; min-width: 0; max-height: 140px;
     border-radius: 0; border: none; border-bottom: 1px solid var(--border);
-    padding: 0.75rem; box-shadow: none;
+    padding: 0.5rem 0.75rem; box-shadow: none;
     backdrop-filter: none; -webkit-backdrop-filter: none; background: var(--bg);
   }
   .logo { margin-bottom: 0.5rem; }
   .room-list, .agent-list { flex-direction: row; overflow-x: auto; gap: 0.5rem; padding-bottom: 0.5rem; }
-  .room-list li, .agent-list li { white-space: nowrap; flex-shrink: 0; background: var(--surface); border-radius: 20px; }
+  .room-list li, .agent-list li { white-space: nowrap; flex-shrink: 0; background: var(--surface); border-radius: 20px; font-size: 0.75rem; padding: 0.4rem 0.7rem; }
   .room-list li.active { background: var(--surface-active); }
 
-  .main { border-radius: 0; border: none; box-shadow: none; background: transparent; }
-  .room-header { padding: 1rem; background: transparent; border-bottom: 1px solid var(--border); }
+  .main { border-radius: 0; border: none; box-shadow: none; background: transparent; min-height: 0; }
   
-  .messages { padding: 1rem; }
-  .msg { max-width: 92%; }
+  /* Cabecera compacta para que no ocupe media pantalla */
+  .room-header { 
+    flex-direction: row; align-items: center; padding: 0.75rem 1rem; 
+    background: transparent; border-bottom: 1px solid var(--border); gap: 0.5rem;
+  }
+  .room-header h2 { font-size: 1rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 140px; }
+  .topic { font-size: 0.7rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 140px; }
+  
+  .room-actions { gap: 0.3rem; }
+  .room-actions .badge { display: none; } /* Ocultamos el cartel de inactiva en móvil */
+  .room-actions .btn-ghost { padding: 0.4rem 0.6rem; font-size: 0.75rem; }
+  .room-actions .btn-ghost.danger { padding: 0.4rem; }
+
+  .messages { padding: 1rem; min-height: 0; }
+  .msg { max-width: 95%; }
+  .msg-avatar { width: 30px; height: 30px; font-size: 1rem; }
+  .msg-body { padding: 0.6rem 0.8rem; }
   
   .composer { padding: 0.75rem; background: var(--bg); border-top: 1px solid var(--border); }
-  .composer-controls { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
-  .composer-controls select, .composer-controls button, .rounds-label { width: 100%; margin: 0; justify-content: center; }
+  .composer-controls { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+  .composer-controls select { flex: 1; font-size: 0.75rem; padding: 0.4rem; }
+  .rounds-label { font-size: 0.75rem; }
+  .rounds-label input { width: 40px; padding: 0.4rem; }
+  #btn-stop { flex: 1; padding: 0.4rem; font-size: 0.75rem; }
   
   .composer-input { border-radius: 20px; padding: 0.4rem 0.4rem 0.4rem 0.8rem; }
-  #user-input { min-height: 40px; }
+  #user-input { min-height: 40px; font-size: 0.9rem; }
   #btn-send { width: 36px; height: 36px; }
 }
