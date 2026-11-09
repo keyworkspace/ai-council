@@ -59,6 +59,8 @@ function renderAgentList() {
 // ── Salas ──
 async function loadRooms() {
   state.rooms = await getAllRooms();
+  // Ordenar por fecha de creación (la más nueva arriba)
+  state.rooms.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   renderRoomList();
 }
 
@@ -118,7 +120,6 @@ function appendMessage({ agentId, agentName, avatar, text, role = 'assistant' },
   const div = document.createElement('div');
   div.className = `msg ${role === 'user' ? 'user' : 'agent'}`;
   
-  // Convertimos el texto de Markdown a HTML usando marked
   const htmlContent = window.marked ? window.marked.parse(text) : escapeHtml(text);
   
   div.innerHTML = `
@@ -150,6 +151,7 @@ async function persistCurrentRoom() {
 // ── Eventos ──
 function bindEvents() {
   $('#btn-new-room').onclick = () => {
+    // Si el botón de nueva sala falla, dejamos el modal preparado
     renderAgentCheckboxes();
     dialogRoom.showModal();
   };
@@ -242,9 +244,37 @@ async function handleSend() {
   const text = userInput.value.trim();
   if (!text) return;
 
+  // 🚨 LÓGICA DE AUTO-CREACIÓN DE SALA 🚨
   if (!state.currentRoomId) {
-    alert('Crea o selecciona una sala primero.');
-    return;
+    // Creamos un nombre corto basado en el primer mensaje
+    const autoName = text.length > 30 ? text.substring(0, 30) + '...' : text;
+    
+    const newRoom = {
+      id: crypto.randomUUID(),
+      name: autoName,
+      topic: text,
+      agentIds: AGENTS.map(a => a.id), // Todos los agentes por defecto
+      mode: 'autonomous',
+      maxRounds: 3,
+      history: [],
+      status: 'Inactiva',
+      createdAt: new Date().toISOString(),
+    };
+    
+    // Guardamos en la base de datos local (IndexedDB)
+    await saveRoom(newRoom);
+    state.rooms.unshift(newRoom); // Añadir al principio de la lista
+    state.currentRoomId = newRoom.id;
+    state.history = [];
+    
+    // Actualizar la interfaz de usuario
+    roomNameEl.textContent = newRoom.name;
+    roomTopicEl.textContent = newRoom.topic;
+    maxRoundsInput.value = newRoom.maxRounds;
+    modeSelect.value = newRoom.mode;
+    updateAgentSelect(newRoom.agentIds);
+    renderMessages(); // Limpiamos la pantalla
+    renderRoomList(); // Refrescamos la lista de salas
   }
 
   const room = state.rooms.find(r => r.id === state.currentRoomId);
@@ -265,7 +295,7 @@ async function handleSend() {
       const agentId = agentSelect.value;
       if (!agentId) { alert('Selecciona un agente para el modo dirigido.'); setRunning(false); return; }
       
-      const responseText = await runDirected({
+      await runDirected({
         agentId, userText: text, history: state.history.slice(0, -1),
         onMessage: (m) => {
           appendMessage(m);
@@ -273,9 +303,9 @@ async function handleSend() {
         },
       });
     } else {
-      // MODO AUTÓNOMO: Pasamos TODO el historial, no solo el tema
+      // MODO AUTÓNOMO
       await runAutonomous({
-        history: state.history, // <--- Aquí pasamos el hilo completo
+        history: state.history,
         selectedAgentIds: room.agentIds,
         maxRounds: Number(maxRoundsInput.value) || 3,
         onMessage: (m) => {
