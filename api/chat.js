@@ -6,19 +6,9 @@ const CORS_HEADERS = {
   'Access-Control-Allow-Headers': 'Content-Type',
 };
 
-// Lista de modelos de respaldo en orden de prioridad (del más potente al más ligero)
 const FALLBACK_MODELS = {
-  groq: [
-    'openai/gpt-oss-120b', 
-    'openai/gpt-oss-20b', 
-    'llama-3.1-8b-instant',
-    'llama3-8b-8192'
-  ],
-  gemini: [
-    'gemini-3.8-flash',
-    'gemini-3.6-flash',
-    'gemini-3.1-flash-lite'
-  ]
+  groq: ['openai/gpt-oss-120b', 'openai/gpt-oss-20b', 'llama-3.1-8b-instant', 'llama3-8b-8192'],
+  gemini: ['gemini-3.8-flash', 'gemini-3.6-flash', 'gemini-3.1-flash-lite']
 };
 
 export default async function handler(req) {
@@ -48,12 +38,11 @@ export default async function handler(req) {
       let finalModel = model;
       let lastError = '';
 
-      // ── FASE 1: Intentar con Groq ──
+      // 1. Intentar con Groq
       if (provider === 'groq') {
         const apiKey = process.env.GROQ_API_KEY;
         if (!apiKey) throw new Error('GROQ_API_KEY no configurada en Vercel.');
 
-        // Creamos una lista única empezando por el modelo solicitado y luego los respaldos
         const modelsToTry = [...new Set([model, ...FALLBACK_MODELS.groq])];
 
         for (const currentModel of modelsToTry) {
@@ -68,7 +57,7 @@ export default async function handler(req) {
               const data = await res.json();
               resultText = data.choices?.[0]?.message?.content || '';
               finalModel = currentModel;
-              break; // ¡Éxito! Rompemos el bucle y devolvemos la respuesta
+              break;
             } else {
               lastError = `Groq ${res.status}: ${await res.text()}`;
             }
@@ -78,7 +67,7 @@ export default async function handler(req) {
         }
       }
 
-      // ── FASE 2: Si Groq falló (o el proveedor era Gemini), intentar con Gemini ──
+      // 2. Si Groq falló, intentar con Gemini
       if (!resultText) {
         const apiKey = process.env.GEMINI_API_KEY;
         
@@ -87,14 +76,12 @@ export default async function handler(req) {
 
           for (const currentModel of modelsToTry) {
             try {
-              // Formateo especial para Gemini
               const systemMsg = messages.find(m => m.role === 'system');
               const contents = messages.filter(m => m.role !== 'system').map(m => ({
                 role: m.role === 'assistant' ? 'model' : 'user',
                 parts: [{ text: m.content }],
               }));
 
-              // Evitar el error 400 de Gemini si el último mensaje es del modelo
               if (contents.length > 0 && contents[contents.length - 1].role === 'model') {
                 contents.push({ role: 'user', parts: [{ text: 'Continúa con tu intervención basándote en lo anterior.' }] });
               }
@@ -113,7 +100,7 @@ export default async function handler(req) {
                 resultText = data.candidates?.[0]?.content?.parts?.map(p => p.text).join('') || '';
                 finalProvider = 'gemini';
                 finalModel = currentModel;
-                break; // ¡Éxito! Rompemos el bucle
+                break;
               } else {
                 lastError = `Gemini ${res.status}: ${await res.text()}`;
               }
@@ -124,7 +111,6 @@ export default async function handler(req) {
         }
       }
 
-      // ── RESPUESTA FINAL ──
       if (resultText) {
         return new Response(JSON.stringify({ 
           text: resultText, 
@@ -136,8 +122,7 @@ export default async function handler(req) {
           headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
         });
       } else {
-        // Si todo falló catastróficamente
-        throw new Error(`El consejo está en mantenimiento. Todos los modelos fallaron. Último error: ${lastError}`);
+        throw new Error(`El consejo está en mantenimiento. Último error: ${lastError}`);
       }
 
     } catch (err) {
