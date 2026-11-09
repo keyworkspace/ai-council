@@ -7,14 +7,12 @@ const CORS_HEADERS = {
 };
 
 export default async function handler(req) {
-  // 1. Manejo de CORS Preflight (Vercel exige 204 sin cuerpo)[reference:1]
   if (req.method === 'OPTIONS') {
     return new Response(null, { status: 204, headers: CORS_HEADERS });
   }
 
   const url = new URL(req.url);
 
-  // 2. Ruta de Healthcheck
   if (url.pathname === '/api/chat' && req.method === 'GET') {
     return new Response(JSON.stringify({ status: 'ok', provider: 'vercel-edge' }), {
       status: 200,
@@ -22,7 +20,6 @@ export default async function handler(req) {
     });
   }
 
-  // 3. Ruta principal de Chat (POST)
   if (url.pathname === '/api/chat' && req.method === 'POST') {
     try {
       const { provider, model, messages, temperature = 0.5 } = await req.json();
@@ -33,7 +30,6 @@ export default async function handler(req) {
 
       let resultText = '';
 
-      // Adaptador para Groq (Compatible con OpenAI)
       if (provider === 'groq') {
         const apiKey = process.env.GROQ_API_KEY;
         if (!apiKey) throw new Error('GROQ_API_KEY no configurada en Vercel.');
@@ -47,7 +43,6 @@ export default async function handler(req) {
         if (!res.ok) throw new Error(`Groq ${res.status}: ${JSON.stringify(data)}`);
         resultText = data.choices?.[0]?.message?.content || '';
 
-      // Adaptador para Gemini
       } else if (provider === 'gemini') {
         const apiKey = process.env.GEMINI_API_KEY;
         if (!apiKey) throw new Error('GEMINI_API_KEY no configurada en Vercel.');
@@ -57,6 +52,11 @@ export default async function handler(req) {
           role: m.role === 'assistant' ? 'model' : 'user',
           parts: [{ text: m.content }],
         }));
+
+        // TRUCO: Gemini falla si el último mensaje es del modelo. Inyectamos uno de usuario.
+        if (contents.length > 0 && contents[contents.length - 1].role === 'model') {
+          contents.push({ role: 'user', parts: [{ text: 'Continúa con tu intervención basándote en lo anterior.' }] });
+        }
 
         const body = { contents, generationConfig: { temperature: Math.min(Math.max(temperature, 0), 2) } };
         if (systemMsg) body.systemInstruction = { parts: [{ text: systemMsg.content }] };
@@ -74,14 +74,12 @@ export default async function handler(req) {
         throw new Error(`Proveedor no soportado: ${provider}`);
       }
 
-      // 4. Respuesta exitosa (siempre con CORS)[reference:2]
       return new Response(JSON.stringify({ text: resultText, provider, model }), {
         status: 200,
         headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
       });
 
     } catch (err) {
-      // 5. Manejo de errores (siempre con CORS)[reference:3]
       return new Response(JSON.stringify({ error: err.message }), {
         status: 500,
         headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
@@ -89,7 +87,6 @@ export default async function handler(req) {
     }
   }
 
-  // Ruta no encontrada
   return new Response(JSON.stringify({ error: 'Ruta no encontrada.' }), {
     status: 404,
     headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
