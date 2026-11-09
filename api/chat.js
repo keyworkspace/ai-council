@@ -33,6 +33,14 @@ export default async function handler(req) {
         throw new Error('Faltan parámetros: provider, model o messages.');
       }
 
+      // 🚨 TRUCO ANTI-COLAPSO: Si el mensaje total supera los 30,000 caracteres, lo recortamos.
+      let safeMessages = messages;
+      const totalChars = messages.reduce((acc, m) => acc + (m.content?.length || 0), 0);
+      if (totalChars > 30000) {
+        // Dejamos el system prompt (el primero) y los últimos 3 mensajes
+        safeMessages = [messages[0], ...messages.slice(-3)];
+      }
+
       let resultText = '';
       let finalProvider = provider;
       let finalModel = model;
@@ -41,7 +49,7 @@ export default async function handler(req) {
       // 1. Intentar con Groq
       if (provider === 'groq') {
         const apiKey = process.env.GROQ_API_KEY;
-        if (!apiKey) throw new Error('GROQ_API_KEY no configurada en Vercel.');
+        if (!apiKey) throw new Error('GROQ_API_KEY no configurada.');
 
         const modelsToTry = [...new Set([model, ...FALLBACK_MODELS.groq])];
 
@@ -50,7 +58,7 @@ export default async function handler(req) {
             const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-              body: JSON.stringify({ model: currentModel, messages, temperature, max_tokens: 1024 }),
+              body: JSON.stringify({ model: currentModel, messages: safeMessages, temperature, max_tokens: 1024 }),
             });
 
             if (res.ok) {
@@ -70,20 +78,19 @@ export default async function handler(req) {
       // 2. Si Groq falló, intentar con Gemini
       if (!resultText) {
         const apiKey = process.env.GEMINI_API_KEY;
-        
         if (apiKey) {
           const modelsToTry = [...new Set([model, ...FALLBACK_MODELS.gemini])];
 
           for (const currentModel of modelsToTry) {
             try {
-              const systemMsg = messages.find(m => m.role === 'system');
-              const contents = messages.filter(m => m.role !== 'system').map(m => ({
+              const systemMsg = safeMessages.find(m => m.role === 'system');
+              const contents = safeMessages.filter(m => m.role !== 'system').map(m => ({
                 role: m.role === 'assistant' ? 'model' : 'user',
                 parts: [{ text: m.content }],
               }));
 
               if (contents.length > 0 && contents[contents.length - 1].role === 'model') {
-                contents.push({ role: 'user', parts: [{ text: 'Continúa con tu intervención basándote en lo anterior.' }] });
+                contents.push({ role: 'user', parts: [{ text: 'Continúa.' }] });
               }
 
               const body = { contents, generationConfig: { temperature: Math.min(Math.max(temperature, 0), 2) } };
@@ -122,7 +129,7 @@ export default async function handler(req) {
           headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
         });
       } else {
-        throw new Error(`El consejo está en mantenimiento. Último error: ${lastError}`);
+        throw new Error(`Todos los modelos fallaron. Último error: ${lastError}`);
       }
 
     } catch (err) {
