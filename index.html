@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>AI COUNCIL — Stark Industries</title>
+  <title>Key Industries · AI Council</title>
   
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -11,7 +11,6 @@
   
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <script>
-    // 🚨 CACHE BUSTER AUTOMÁTICO 🚨
     const autoVersion = new Date().getTime();
     const link = document.createElement('link');
     link.rel = 'stylesheet';
@@ -30,7 +29,7 @@
       <div class="logo-container">
         <div class="logo-icon">⚡</div>
         <div>
-          <h1>STARK COUNCIL</h1>
+          <h1>KEY INDUSTRIES</h1>
           <span class="subtitle">Deliberación Multiagente</span>
         </div>
       </div>
@@ -50,7 +49,10 @@
     <main class="main">
       <header class="room-header">
         <div class="header-info">
-          <h2 id="room-name">Selecciona o crea una sesión</h2>
+          <div class="title-wrapper">
+            <h2 id="room-name">Selecciona o crea una sesión</h2>
+            <button id="btn-edit-room-name" class="btn-icon-mini" title="Renombrar sala">✏️</button>
+          </div>
           <p id="room-topic" class="topic">—</p>
         </div>
         <div class="room-actions">
@@ -94,12 +96,11 @@
     </main>
   </div>
 
-  <!-- Modal de nueva sala -->
+  <!-- Modal de nueva sala (Solo pide Título) -->
   <dialog id="dialog-room" class="tech-dialog">
     <form method="dialog" id="form-room">
       <h3>Inicializar Nueva Sesión</h3>
       <label>Identificador de la Sala <input type="text" id="input-room-name" required maxlength="80" placeholder="Ej. Análisis de Proyecto"></label>
-      <label>Directriz / Tema <textarea id="input-room-topic" rows="3" required placeholder="Describe el problema o situación..."></textarea></label>
       <label>Seleccionar Agentes
         <div id="agent-checkboxes" class="checkbox-grid"></div>
       </label>
