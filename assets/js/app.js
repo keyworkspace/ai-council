@@ -3,7 +3,6 @@ import { runAutonomous, runDirected } from './orchestrator.js';
 import { getAllRooms, saveRoom, deleteRoom } from './db.js';
 import { checkHealth } from './api.js';
 
-// ── Estado global ──
 const state = {
   rooms: [],
   currentRoomId: null,
@@ -12,7 +11,6 @@ const state = {
   isRunning: false,
 };
 
-// ── Referencias DOM ──
 const $ = (sel) => document.querySelector(sel);
 const roomListEl = $('#room-list');
 const agentListEl = $('#agent-list');
@@ -28,32 +26,13 @@ const btnStop = $('#btn-stop');
 const userInput = $('#user-input');
 const dialogRoom = $('#dialog-room');
 
-// ── Inicialización BLINDADA ──
 async function init() {
-  // 1. Primero activamos los botones para que la app nunca se quede congelada
   bindEvents();
   renderAgentList();
-  
-  // 2. Luego intentamos cargar datos
-  try {
-    await loadRooms();
-  } catch (e) {
-    console.error("Error cargando IndexedDB:", e);
-    roomStatusEl.textContent = '⚠️ Modo sin guardado';
-  }
-
-  // 3. Comprobamos el backend
-  try {
-    const ok = await checkHealth();
-    if (!ok && !state.isRunning) {
-      // roomStatusEl.textContent = '⚠️ Worker no disponible';
-    }
-  } catch (e) {
-    console.error("Error en checkHealth:", e);
-  }
+  try { await loadRooms(); } catch (e) { console.error(e); }
+  try { await checkHealth(); } catch (e) { console.error(e); }
 }
 
-// ── Render de agentes ──
 function renderAgentList() {
   agentListEl.innerHTML = '';
   AGENTS.forEach(a => {
@@ -63,13 +42,12 @@ function renderAgentList() {
         <span class="agent-dot ${a.active ? '' : 'off'}"></span>
         <span>${a.avatar} ${a.name}</span>
       </span>
-      <small style="color:var(--text-dim);font-size:0.65rem">${a.provider}</small>
+      <small style="color:var(--text-muted);font-size:0.65rem">${a.provider}</small>
     `;
     agentListEl.appendChild(li);
   });
 }
 
-// ── Salas ──
 async function loadRooms() {
   state.rooms = await getAllRooms();
   state.rooms.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
@@ -95,11 +73,11 @@ async function selectRoom(id) {
   state.history = room.history || [];
   roomNameEl.textContent = room.name;
   roomTopicEl.textContent = room.topic;
-  roomStatusEl.textContent = room.status || 'Inactiva';
+  roomStatusEl.textContent = room.status || 'En espera';
   roomStatusEl.classList.toggle('active', room.status === 'Activa');
   maxRoundsInput.value = room.maxRounds || 3;
   modeSelect.value = room.mode || 'autonomous';
-  updateAgentSelect(room.agentIds || AGENTS.map(a => a.id));
+  updateAgentSelect(room.agentIds || getActiveAgents().map(a => a.id));
   renderMessages();
   renderRoomList();
 }
@@ -117,11 +95,10 @@ function updateAgentSelect(agentIds) {
   });
 }
 
-// ── Mensajes ──
 function renderMessages() {
   messagesEl.innerHTML = '';
   if (!state.history.length) {
-    messagesEl.innerHTML = `<div class="empty-state"><p>🏛️ El consejo está en receso.</p><p>Plantea un tema para comenzar.</p></div>`;
+    messagesEl.innerHTML = `<div class="empty-state"><div class="empty-icon">🛸</div><h3>Sistemas en espera</h3><p>Envía un comunicado para iniciar la deliberación.</p></div>`;
     return;
   }
   state.history.forEach(m => appendMessage(m, false));
@@ -132,7 +109,6 @@ function appendMessage({ agentId, agentName, avatar, text, role = 'assistant' },
   const div = document.createElement('div');
   div.className = `msg ${role === 'user' ? 'user' : 'agent'}`;
   
-  // Usamos marked si está disponible, si no, mostramos texto plano
   const htmlContent = window.marked ? window.marked.parse(text) : text;
   
   div.innerHTML = `
@@ -146,34 +122,24 @@ function appendMessage({ agentId, agentName, avatar, text, role = 'assistant' },
   if (scroll) messagesEl.scrollTop = messagesEl.scrollHeight;
 }
 
-// ── Persistencia ──
 async function persistCurrentRoom() {
   const room = state.rooms.find(r => r.id === state.currentRoomId);
   if (!room) return;
   room.history = state.history;
-  room.status = state.isRunning ? 'Activa' : 'Inactiva';
+  room.status = state.isRunning ? 'Activa' : 'En espera';
   room.mode = modeSelect.value;
   room.maxRounds = Number(maxRoundsInput.value);
-  try {
-    await saveRoom(room);
-  } catch (e) {
-    console.error("No se pudo guardar la sala", e);
-  }
+  try { await saveRoom(room); } catch (e) { console.warn(e); }
 }
 
-// ── Eventos ──
 function bindEvents() {
   $('#btn-new-room').onclick = () => {
-    // Intentamos abrir el modal moderno
     try {
       if (typeof dialogRoom.showModal === 'function') {
         renderAgentCheckboxes();
         dialogRoom.showModal();
-      } else {
-        throw new Error('Dialog no soportado');
-      }
+      } else { throw new Error('Dialog no soportado'); }
     } catch (e) {
-      // SI FALLA (celulares antiguos), usamos ventanas de texto simples
       const name = prompt('Nombre de la sala:');
       if (!name) return;
       const topic = prompt('Tema de discusión:');
@@ -182,9 +148,7 @@ function bindEvents() {
     }
   };
 
-  $('#btn-cancel-room').onclick = () => {
-    if (dialogRoom.close) dialogRoom.close();
-  };
+  $('#btn-cancel-room').onclick = () => { if (dialogRoom.close) dialogRoom.close(); };
 
   $('#form-room').onsubmit = async (e) => {
     e.preventDefault();
@@ -237,16 +201,15 @@ function bindEvents() {
   };
 }
 
-// ── Utilidades ──
 async function createManualRoom(name, topic, agentIds = null) {
   const newRoom = {
     id: crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(),
     name, topic,
-    agentIds: agentIds || AGENTS.map(a => a.id),
+    agentIds: agentIds || getActiveAgents().map(a => a.id),
     mode: 'autonomous',
     maxRounds: 3,
     history: [],
-    status: 'Inactiva',
+    status: 'En espera',
     createdAt: new Date().toISOString(),
   };
   try { await saveRoom(newRoom); } catch(e) {}
@@ -259,8 +222,9 @@ function renderAgentCheckboxes() {
   const container = $('#agent-checkboxes');
   container.innerHTML = '';
   AGENTS.forEach(a => {
+    if (!a.active) return;
     const label = document.createElement('label');
-    label.innerHTML = `<input type="checkbox" value="${a.id}" ${a.active ? 'checked' : ''}> ${a.avatar} ${a.name}`;
+    label.innerHTML = `<input type="checkbox" value="${a.id}" checked> ${a.avatar} ${a.name}`;
     container.appendChild(label);
   });
 }
@@ -269,7 +233,7 @@ function setRunning(running) {
   state.isRunning = running;
   btnSend.disabled = running;
   btnStop.disabled = !running;
-  roomStatusEl.textContent = running ? 'Activa' : 'Inactiva';
+  roomStatusEl.textContent = running ? 'Activa' : 'En espera';
   roomStatusEl.classList.toggle('active', running);
 }
 
@@ -278,19 +242,17 @@ async function handleSend() {
   const text = userInput.value.trim();
   if (!text) return;
 
-  // AUTO-CREACIÓN DE SALA
   if (!state.currentRoomId) {
     const autoName = text.length > 30 ? text.substring(0, 30) + '...' : text;
-    
     const newRoom = {
       id: crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(),
       name: autoName,
       topic: text,
-      agentIds: AGENTS.map(a => a.id),
+      agentIds: getActiveAgents().map(a => a.id),
       mode: 'autonomous',
       maxRounds: 3,
       history: [],
-      status: 'Inactiva',
+      status: 'En espera',
       createdAt: new Date().toISOString(),
     };
     
@@ -352,5 +314,4 @@ async function handleSend() {
   }
 }
 
-// Arrancamos
 init();
