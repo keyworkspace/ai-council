@@ -76,7 +76,6 @@ Responde en español, con pasos claros y mucha seguridad.`,
     temperature: 0.6,
     active: true,
   },
-  // --- REPUESTOS (Solo aparecen si los activas manualmente en el código) ---
   {
     id: 'dume',
     name: 'D.U.M.-E.',
@@ -88,7 +87,7 @@ Responde en español, con pasos claros y mucha seguridad.`,
     provider: 'groq',
     model: 'openai/gpt-oss-120b',
     temperature: 0.8,
-    active: false, // <--- INACTIVO POR DEFECTO
+    active: false,
   },
   {
     id: 'u',
@@ -101,7 +100,7 @@ Responde en español, con pasos claros y mucha seguridad.`,
     provider: 'groq',
     model: 'openai/gpt-oss-120b',
     temperature: 0.9,
-    active: false, // <--- INACTIVO POR DEFECTO
+    active: false,
   }
 ];
 
