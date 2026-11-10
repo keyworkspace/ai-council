@@ -1,11 +1,19 @@
 {
-  "name": "AI Council · Key Industries",
+  "name": "Key Industries · AI Council",
   "short_name": "AI Council",
+  "description": "Plataforma de deliberación multiagente con IAs inspiradas en Marvel.",
   "start_url": "/ai-council/",
+  "scope": "/ai-council/",
   "display": "standalone",
+  "orientation": "portrait",
   "background_color": "#050505",
   "theme_color": "#00f0ff",
   "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/2593/2593577.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
     {
       "src": "https://cdn-icons-png.flaticon.com/512/2593/2593577.png",
       "sizes": "512x512",
