@@ -16,13 +16,12 @@
   
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 
-  <!-- 🚨 FIREBASE SDK 🚨 -->
+  <!-- FIREBASE SDK -->
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
     import { getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
     import { getFirestore, doc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
-    // 🚨 TU CONFIGURACIÓN DE FIREBASE 🚨
     const firebaseConfig = {
       apiKey: "AIzaSyDIt8vIJ6S0MWdY5naXSDuy7kEf2RwlJ-w",
       authDomain: "ai-council-18bd7.firebaseapp.com",
@@ -53,9 +52,7 @@
 
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
-        navigator.serviceWorker.register('sw.js').then(reg => {
-          console.log('Service Worker registrado:', reg.scope);
-        });
+        navigator.serviceWorker.register('sw.js');
       });
     }
   </script>
@@ -81,7 +78,7 @@
       <div class="section-title">Personal Asignado</div>
       <ul id="agent-list" class="agent-list"></ul>
 
-      <!-- 🚨 SECCIÓN DE USUARIO (LOGIN Y CRÉDITOS) 🚨 -->
+      <!-- SECCIÓN DE LOGIN Y CRÉDITOS -->
       <div id="auth-section" style="margin-top: auto; border-top: 1px solid var(--border-color); padding-top: 1rem;">
         <button id="btn-login" class="btn-primary" style="width: 100%;">Iniciar sesión con Google</button>
         
@@ -142,7 +139,7 @@
           
           <input type="file" id="file-input" accept=".html,.css,.js,.json,.txt,.md" style="display: none;">
           
-          <button id="btn-attach" class="btn-icon" title="Adjuntar archivo (HTML, CSS, TXT)" style="background: transparent; border: none; font-size: 1.2rem; width: 40px; height: 40px;">
+          <button id="btn-attach" class="btn-icon" title="Adjuntar archivo" style="background: transparent; border: none; font-size: 1.2rem; width: 40px; height: 40px;">
             📎
           </button>
 
