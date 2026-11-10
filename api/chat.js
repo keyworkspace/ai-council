@@ -2,17 +2,24 @@ import { initializeApp, cert, getApps } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
 
-// 🚨 FORZAMOS NODE.JS PARA QUE FIREBASE FUNCIONE
 export const config = { runtime: 'nodejs' };
 
+if (!process.env.FIREBASE_PROJECT_ID || !process.env.FIREBASE_CLIENT_EMAIL || !process.env.FIREBASE_PRIVATE_KEY) {
+  console.error("Faltan variables de entorno de Firebase.");
+}
+
 if (!getApps().length) {
-  initializeApp({
-    credential: cert({
-      projectId: process.env.FIREBASE_PROJECT_ID,
-      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-      privateKey: process.env.FIREBASE_PRIVATE_KEY ? process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n') : undefined,
-    }),
-  });
+  try {
+    initializeApp({
+      credential: cert({
+        projectId: process.env.FIREBASE_PROJECT_ID,
+        clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+        privateKey: process.env.FIREBASE_PRIVATE_KEY ? process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n') : undefined,
+      }),
+    });
+  } catch (err) {
+    console.error("Error inicializando Firebase:", err);
+  }
 }
 const db = getFirestore();
 
@@ -30,7 +37,6 @@ const FALLBACK_MODELS = {
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 export default async function handler(req, res) {
-  // Configuración de CORS
   if (req.method === 'OPTIONS') {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
@@ -43,7 +49,6 @@ export default async function handler(req, res) {
   }
 
   if (req.method === 'POST') {
-    // Validación del Token de Firebase
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       return res.status(401).json({ error: 'No autorizado. Inicia sesión.' });
@@ -55,12 +60,11 @@ export default async function handler(req, res) {
       const decodedToken = await getAuth().verifyIdToken(idToken);
       uid = decodedToken.uid;
     } catch (error) {
-      return res.status(401).json({ error: 'Token inválido o expirado.' });
+      return res.status(401).json({ error: 'Token inválido. Vuelve a iniciar sesión.' });
     }
 
     const userRef = db.collection('users').doc(uid);
     
-    // 🚨 1. VERIFICAR Y RESTAR CRÉDITO ANTES DE HABLAR 🚨
     let currentCredits = 50;
     try {
       await db.runTransaction(async (t) => {
@@ -68,7 +72,6 @@ export default async function handler(req, res) {
         if (doc.exists) {
           currentCredits = doc.data().credits;
         } else {
-          // Si el usuario es nuevo, le damos 50 créditos iniciales
           t.set(userRef, { credits: 50, lastUpdated: new Date() });
         }
         
@@ -76,20 +79,18 @@ export default async function handler(req, res) {
           throw new Error('Sin créditos');
         }
         
-        // Restamos 1 crédito de forma segura
         t.set(userRef, { credits: currentCredits - 1, lastUpdated: new Date() }, { merge: true });
       });
     } catch (e) {
       if (e.message === 'Sin créditos') {
         return res.status(403).json({ error: 'Te has quedado sin créditos. Vuelve más tarde.' });
       }
-      return res.status(500).json({ error: 'Error de base de datos: ' + e.message });
+      return res.status(500).json({ error: 'Error de DB: ' + e.message });
     }
 
     try {
       const { provider, model, messages, temperature = 0.5 } = req.body;
       
-      // Recortar contexto si es muy largo para no saturar a la IA
       let safeMessages = messages;
       if (messages.reduce((acc, m) => acc + (m.content?.length || 0), 0) > 80000) {
         safeMessages = [messages[0], ...messages.slice(-15)];
@@ -97,7 +98,6 @@ export default async function handler(req, res) {
 
       let resultText = '';
       
-      // 2. Intentar con Groq (Sin Streaming para garantizar el guardado del crédito)
       if (provider === 'groq') {
         const apiKey = process.env.GROQ_API_KEY;
         if (apiKey) {
@@ -112,10 +112,8 @@ export default async function handler(req, res) {
               if (groqRes.ok) {
                 const data = await groqRes.json();
                 resultText = data.choices?.[0]?.message?.content || '';
-                // Devolvemos la respuesta y los créditos restantes
                 return res.status(200).json({ text: resultText, provider: 'groq', creditsLeft: currentCredits - 1 });
               } else if (groqRes.status === 429) {
-                // Si Groq está saturado, esperamos y reintentamos
                 await sleep(1500);
               } else {
                 break;
@@ -125,7 +123,6 @@ export default async function handler(req, res) {
         }
       }
 
-      // 3. Respaldo con Gemini
       const geminiKey = process.env.GEMINI_API_KEY;
       if (geminiKey) {
         for (const currentModel of FALLBACK_MODELS.gemini) {
@@ -153,11 +150,9 @@ export default async function handler(req, res) {
         }
       }
 
-      // Si todo falla:
-      throw new Error('Servidores de IA saturados.');
+      throw new Error('Servidores de IA saturados. Intenta de nuevo.');
 
     } catch (err) {
-      // 🚨 SI LA IA FALLA, LE DEVOLVEMOS EL CRÉDITO AL USUARIO 🚨
       await userRef.set({ credits: currentCredits }, { merge: true });
       return res.status(500).json({ error: err.message });
     }
