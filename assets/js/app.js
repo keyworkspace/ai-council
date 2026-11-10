@@ -26,6 +26,7 @@ const btnStop = $('#btn-stop');
 const userInput = $('#user-input');
 const dialogRoom = $('#dialog-room');
 const sidebarEl = $('#sidebar');
+const btnScrollBottom = $('#btn-scroll-bottom');
 
 async function init() {
   bindEvents();
@@ -86,7 +87,7 @@ async function selectRoom(id) {
 }
 
 function updateAgentSelect(agentIds) {
-  agentSelect.innerHTML = '<option value="">— Agente —</option>';
+  agentSelect.innerHTML = '<option value="">· Agente ·</option>';
   (agentIds || []).forEach(id => {
     const a = getAgentById(id);
     if (a && a.active) {
@@ -106,14 +107,22 @@ function renderMessages() {
   }
   state.history.forEach(m => appendMessage(m, false));
   messagesEl.scrollTop = messagesEl.scrollHeight;
+  btnScrollBottom.classList.add('hidden');
+}
+
+// 🚨 DETECTOR DE SCROLL 🚨
+function isUserAtBottom() {
+  const threshold = 150; // Margen de 150px
+  return messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < threshold;
 }
 
 function appendMessage({ agentId, agentName, avatar, text, role = 'assistant' }, scroll = true) {
+  // Guardamos si el usuario estaba abajo ANTES de añadir el nuevo mensaje
+  const wasAtBottom = isUserAtBottom();
+
   const div = document.createElement('div');
   div.className = `msg ${role === 'user' ? 'user' : 'agent'}`;
   
-  // 🚨 LIMPIEZA DE SALTOS DE LÍNEA EXCESIVOS 🚨
-  // Reemplaza 3 o más saltos de línea seguidos por solo 2.
   const cleanText = text.replace(/\n{3,}/g, '\n\n');
   const htmlContent = window.marked ? window.marked.parse(cleanText) : cleanText;
   
@@ -125,7 +134,17 @@ function appendMessage({ agentId, agentName, avatar, text, role = 'assistant' },
     </div>
   `;
   messagesEl.appendChild(div);
-  if (scroll) messagesEl.scrollTop = messagesEl.scrollHeight;
+
+  // 🚨 LÓGICA DEL SCROLL INTELIGENTE 🚨
+  if (scroll) {
+    if (role === 'user' || wasAtBottom) {
+      // Si soy yo quien envía, o si ya estabas abajo, bajamos automáticamente
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+    } else {
+      // Si no estabas abajo y es un mensaje de la IA, mostramos el botón
+      btnScrollBottom.classList.remove('hidden');
+    }
+  }
 }
 
 async function persistCurrentRoom() {
@@ -139,9 +158,21 @@ async function persistCurrentRoom() {
 }
 
 function bindEvents() {
-  // 🚨 BOTÓN PARA COLAPSAR EL SIDEBAR 🚨
   $('#btn-toggle-sidebar').onclick = () => {
     sidebarEl.classList.toggle('collapsed');
+  };
+
+  // 🚨 EVENTOS DEL SCROLL 🚨
+  messagesEl.onscroll = () => {
+    if (isUserAtBottom()) {
+      btnScrollBottom.classList.add('hidden');
+    } else {
+      btnScrollBottom.classList.remove('hidden');
+    }
+  };
+
+  btnScrollBottom.onclick = () => {
+    messagesEl.scrollTo({ top: messagesEl.scrollHeight, behavior: 'smooth' });
   };
 
   $('#btn-new-room').onclick = () => {
@@ -193,7 +224,7 @@ function bindEvents() {
     await loadRooms();
     renderMessages();
     roomNameEl.textContent = 'Selecciona o crea una sala';
-    roomTopicEl.textContent = '—';
+    roomTopicEl.textContent = '·';
   };
 
   $('#btn-export').onclick = () => {
@@ -296,6 +327,7 @@ async function handleSend() {
 
   const userMsg = { role: 'user', agentName: 'Usuario', text };
   state.history.push(userMsg);
+  // Forzamos el scroll al enviar un mensaje
   appendMessage({ agentName: 'Usuario', text, role: 'user' });
   userInput.value = '';
 
