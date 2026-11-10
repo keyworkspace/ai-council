@@ -2,8 +2,14 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>Key Industries · AI Council</title>
+  
+  <!-- 🚨 CONFIGURACIÓN PWA 🚨 -->
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#050505">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -11,6 +17,7 @@
   
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <script>
+    // Cache buster automático
     const autoVersion = new Date().getTime();
     const link = document.createElement('link');
     link.rel = 'stylesheet';
@@ -20,6 +27,17 @@
     script.type = 'module';
     script.src = 'assets/js/app.js?v=' + autoVersion;
     document.head.appendChild(script);
+
+    // 🚨 REGISTRO DEL SERVICE WORKER 🚨
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('sw.js').then(reg => {
+          console.log('Service Worker registrado con éxito:', reg.scope);
+        }).catch(err => {
+          console.log('Fallo al registrar el Service Worker:', err);
+        });
+      });
+    }
   </script>
 </head>
 <body>
@@ -71,7 +89,6 @@
         </div>
       </div>
 
-      <!-- Botón flotante para bajar al final -->
       <button id="btn-scroll-bottom" class="btn-scroll-bottom hidden" title="Ir al último mensaje">⬇</button>
 
       <div class="composer">
