@@ -50,6 +50,8 @@
       <header class="room-header">
         <div class="header-info">
           <div class="title-wrapper">
+            <!-- Botón para colapsar el menú -->
+            <button id="btn-toggle-sidebar" class="btn-icon-mini" title="Ocultar menú" style="font-size: 1.2rem; margin-right: 5px;">☰</button>
             <h2 id="room-name">Selecciona o crea una sesión</h2>
             <button id="btn-edit-room-name" class="btn-icon-mini" title="Renombrar sala">✏️</button>
           </div>
@@ -96,7 +98,7 @@
     </main>
   </div>
 
-  <!-- Modal de nueva sala (Solo pide Título) -->
+  <!-- Modal de nueva sala -->
   <dialog id="dialog-room" class="tech-dialog">
     <form method="dialog" id="form-room">
       <h3>Inicializar Nueva Sesión</h3>
