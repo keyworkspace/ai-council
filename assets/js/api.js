@@ -2,7 +2,7 @@ import { WORKER_URL } from './config.js';
 
 export async function chat({ provider, model, messages, temperature = 0.5 }, onChunk) {
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 60000); // 60s por el streaming
+  const timeoutId = setTimeout(() => controller.abort(), 60000); // 60s
 
   let res;
   try {
@@ -24,20 +24,27 @@ export async function chat({ provider, model, messages, temperature = 0.5 }, onC
     throw new Error(`Error HTTP ${res.status}: ${errText.slice(0, 100)}`);
   }
 
-  // 🚨 LÓGICA DE STREAMING 🚨
-  const contentType = res.headers.get('content-type') || '';
-  
-  if (contentType.includes('text/event-stream')) {
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    let fullText = '';
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let fullText = '';
+  let isStream = false;
+  let buffer = '';
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
+  // 🚨 LEEMOS LA RESPUESTA EN TIEMPO REAL 🚨
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
 
-      const chunk = decoder.decode(value, { stream: true });
-      const lines = chunk.split('\n');
+    buffer += decoder.decode(value, { stream: true });
+    
+    // Si el texto empieza con "data: ", sabemos que es un stream.
+    if (!isStream && buffer.trim().startsWith('data: ')) {
+      isStream = true;
+    }
+
+    if (isStream) {
+      const lines = buffer.split('\n');
+      buffer = lines.pop(); // Guardamos la última línea incompleta
 
       for (const line of lines) {
         if (line.startsWith('data: ') && line !== 'data: [DONE]') {
@@ -46,16 +53,23 @@ export async function chat({ provider, model, messages, temperature = 0.5 }, onC
             const delta = data.choices?.[0]?.delta?.content || '';
             if (delta) {
               fullText += delta;
-              if (onChunk) onChunk(delta); // Mandamos el trozo a la UI
+              if (onChunk) onChunk(delta); // Pintamos la letra
             }
           } catch (e) {}
         }
       }
+    } else {
+      // Si no es un stream, es un JSON normal, lo acumulamos
+      fullText += buffer;
+      buffer = ''; 
     }
+  }
+
+  // Al terminar, devolvemos todo el texto
+  if (isStream) {
     return { text: fullText, provider };
   } else {
-    // Fallback normal
-    const data = await res.json();
+    const data = JSON.parse(fullText);
     if (onChunk) onChunk(data.text);
     return data;
   }
