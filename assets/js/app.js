@@ -32,14 +32,18 @@ const fileInput = $('#file-input');
 const filePreview = $('#file-preview');
 const fileNameDisplay = $('#file-name-display');
 
+// 🚨 REFERENCIAS AL POP-UP 🚨
+const loginPopup = $('#login-popup');
+
 let activeStreamingEl = null;
 let activeStreamingAgent = null;
 let currentUser = null;
+let loginTimer = null; // Variable para el temporizador de 10 segundos
 
-// 🚨 LÓGICA DE AUTENTICACIÓN 🚨
+// 🚨 LÓGICA DE AUTENTICACIÓN Y TEMPORIZADOR 🚨
 setTimeout(() => {
   if (!window.firebaseFuncs) {
-    console.error("Firebase no cargó correctamente.");
+    console.error("Firebase no cargó correctamente. Revisa tu conexión o configuración.");
     return;
   }
 
@@ -47,13 +51,16 @@ setTimeout(() => {
   
   onAuthStateChanged(window.auth, async (user) => {
     if (user) {
+      // ✅ Usuario Logueado
       currentUser = user;
+      clearTimeout(loginTimer); // Cancelamos el temporizador
+      if (loginPopup && loginPopup.open) loginPopup.close(); // Cerramos el popup
+      
       document.getElementById('btn-login').style.display = 'none';
       document.getElementById('user-info').style.display = 'flex';
       document.getElementById('user-avatar').src = user.photoURL || '';
       document.getElementById('user-name').textContent = user.displayName || 'Usuario';
       
-      // Escuchar cambios en tiempo real de los créditos
       const userRef = doc(window.db, 'users', user.uid);
       onSnapshot(userRef, (docSnap) => {
         if (docSnap.exists()) {
@@ -63,16 +70,41 @@ setTimeout(() => {
         }
       });
     } else {
+      // ❌ Usuario NO Logueado
       currentUser = null;
       document.getElementById('btn-login').style.display = 'block';
       document.getElementById('user-info').style.display = 'none';
+      
+      // Iniciar el temporizador de 10 segundos
+      if (!loginTimer && loginPopup && !loginPopup.open) {
+        loginTimer = setTimeout(() => {
+          if (!currentUser && loginPopup) {
+            loginPopup.showModal();
+          }
+        }, 10000); // 10 segundos
+      }
     }
   });
 
-  document.getElementById('btn-login').onclick = () => {
+  const handleLogin = () => {
     signInWithPopup(window.auth, window.googleProvider).catch(err => alert("Error al iniciar sesión: " + err.message));
   };
+
+  // Botones para iniciar sesión
+  document.getElementById('btn-login').onclick = handleLogin;
+  if (document.getElementById('btn-popup-login')) {
+    document.getElementById('btn-popup-login').onclick = handleLogin;
+  }
   
+  // Botón para cerrar el popup y seguir explorando
+  if (document.getElementById('btn-popup-close')) {
+    document.getElementById('btn-popup-close').onclick = () => {
+      if (loginPopup) loginPopup.close();
+      // Si cierra el popup, cancelamos el timer para no molestarlo hasta que recargue o intente enviar
+      clearTimeout(loginTimer); 
+    };
+  }
+
   document.getElementById('btn-logout').onclick = () => signOut(window.auth);
 }, 500);
 
@@ -95,6 +127,7 @@ function renderAgentList() {
     li.className = isActive ? 'agent-on' : 'agent-off';
     li.style.cursor = 'pointer';
     li.title = isActive ? 'Desactivar agente' : 'Activar agente';
+    
     li.onclick = () => toggleAgent(a.id);
 
     li.innerHTML = `
@@ -180,7 +213,7 @@ function updateAgentSelect(agentIds) {
 function renderMessages() {
   messagesEl.innerHTML = '';
   if (!state.history.length) {
-    messagesEl.innerHTML = `<div class="empty-state"><div class="empty-icon">🛸</div><h3>Sistemas en espera</h3><p>Envía un comunicado o adjunta un archivo.</p></div>`;
+    messagesEl.innerHTML = `<div class="empty-state"><div class="empty-icon">🛸</div><h3>Sistemas en espera</h3><p>Envía un comunicado o adjunta un archivo para iniciar la deliberación.</p></div>`;
     return;
   }
   state.history.forEach(m => appendMessage(m, false));
@@ -243,12 +276,15 @@ async function persistCurrentRoom() {
 
 function bindEvents() {
   $('#btn-toggle-sidebar').onclick = () => { sidebarEl.classList.toggle('collapsed'); };
+  
   messagesEl.onscroll = () => {
     if (isUserAtBottom()) btnScrollBottom.classList.add('hidden');
     else btnScrollBottom.classList.remove('hidden');
   };
+  
   btnScrollBottom.onclick = () => { messagesEl.scrollTo({ top: messagesEl.scrollHeight, behavior: 'smooth' }); };
 
+  // Carga de archivos
   $('#btn-attach').onclick = () => fileInput.click();
 
   fileInput.onchange = (e) => {
@@ -270,8 +306,12 @@ function bindEvents() {
     filePreview.classList.add('hidden');
   };
 
+  // Botones de sala
   $('#btn-new-room').onclick = () => {
-    if (!currentUser) { alert('Inicia sesión primero.'); return; }
+    if (!currentUser) {
+      if (loginPopup) loginPopup.showModal();
+      return;
+    }
     try {
       if (typeof dialogRoom.showModal === 'function') {
         renderAgentCheckboxes();
@@ -285,6 +325,7 @@ function bindEvents() {
   };
 
   $('#btn-cancel-room').onclick = () => { if (dialogRoom.close) dialogRoom.close(); };
+  
   $('#form-room').onsubmit = async (e) => {
     e.preventDefault();
     const name = $('#input-room-name').value.trim();
@@ -386,7 +427,11 @@ function setRunning(running) {
 }
 
 async function handleSend() {
-  if (!currentUser) { alert('Debes iniciar sesión con Google para hablar con el consejo.'); return; }
+  // 🚨 VALIDACIÓN DE LOGIN ANTES DE ENVIAR 🚨
+  if (!currentUser) {
+    if (loginPopup) loginPopup.showModal();
+    return;
+  }
   
   let text = userInput.value.trim();
   if (!text && !state.attachedFile) return;
@@ -474,6 +519,7 @@ async function handleSend() {
     if (modeSelect.value === 'directed') {
       const agentId = agentSelect.value;
       if (!agentId) { alert('Selecciona un agente.'); setRunning(false); return; }
+      
       await runDirected({
         agentId, userText: finalMessageText, history: state.history.slice(0, -1),
         onMessage, onChunk,
