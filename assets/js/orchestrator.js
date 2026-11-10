@@ -6,7 +6,7 @@ function buildMessages(agent, history) {
   
   let contextToSend = history;
   if (history.length > 10) {
-    contextToSend = [history[0], ...history.slice(-8)];
+    contextToSend = [history[0], ...history.slice(-9)];
   }
 
   const dialogue = contextToSend.map(m => ({
@@ -32,7 +32,9 @@ async function agentSpeak(agent, currentHistory, onMessage, onStatus, statusMsg,
     let cleanText = text;
     let needsUser = false;
 
+    // Limpiador de alucinaciones
     cleanText = cleanText.replace(/\[DRAFT SECRETO[\s\S]*?-----+/gi, '');
+    cleanText = cleanText.replace(/\[DRAFT[\s\S]*?-----+/gi, '');
     cleanText = cleanText.replace(/\[ESTRATEGA\]:\s*/gi, '');
     cleanText = cleanText.replace(/\[ANALISTA\]:\s*/gi, '');
     cleanText = cleanText.replace(/\[CRÍTICO\]:\s*/gi, '');
@@ -58,15 +60,14 @@ export async function runAutonomous({ history, selectedAgentIds, maxRounds, onMe
   if (!agents.length) throw new Error('No hay agentes activos.');
 
   let currentHistory = [...history];
+  
   const director = agents.find(a => a.id === 'director');
   const analista = agents.find(a => a.id === 'analista');
   const critico = agents.find(a => a.id === 'critico');
   const estratega = agents.find(a => a.id === 'estratega');
-  // Fallback: si no hay asesor, el director da la conclusión final
   const asesor = agents.find(a => a.id === 'asesor') || agents.find(a => a.id === 'director');
 
   for (let ronda = 1; ronda <= maxRounds; ronda++) {
-    // El director abre o modera
     if (director) {
       const res = await agentSpeak(director, currentHistory, onMessage, onStatus, `Ronda ${ronda} · J.A.R.V.I.S. modera...`, signal);
       if (res.aborted || res.needsUser) return;
@@ -92,7 +93,6 @@ export async function runAutonomous({ history, selectedAgentIds, maxRounds, onMe
       if (res.aborted || res.needsUser) return;
     }
 
-    // Si es la última ronda, el Asesor (o el Director) concluye
     if (ronda === maxRounds && asesor) {
       const res = await agentSpeak(asesor, currentHistory, onMessage, onStatus, `El ASESOR formula la conclusión...`, signal);
       if (res.aborted || res.needsUser) return;
