@@ -33,11 +33,10 @@ export default async function handler(req) {
         throw new Error('Faltan parámetros: provider, model o messages.');
       }
 
-      // Truncar si el mensaje es demasiado largo para evitar Timeout
       let safeMessages = messages;
       const totalChars = messages.reduce((acc, m) => acc + (m.content?.length || 0), 0);
       if (totalChars > 30000) {
-        safeMessages = [messages[0], ...messages.slice(-3)];
+        safeMessages = [messages[0], ...messages.slice(-5)];
       }
 
       let resultText = '';
@@ -56,7 +55,12 @@ export default async function handler(req) {
             const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-              body: JSON.stringify({ model: currentModel, messages: safeMessages, temperature, max_tokens: 1024 }),
+              body: JSON.stringify({ 
+                model: currentModel, 
+                messages: safeMessages, 
+                temperature, 
+                max_tokens: 4096
+              }),
             });
 
             if (res.ok) {
@@ -90,7 +94,13 @@ export default async function handler(req) {
                 contents.push({ role: 'user', parts: [{ text: 'Continúa.' }] });
               }
 
-              const body = { contents, generationConfig: { temperature: Math.min(Math.max(temperature, 0), 2) } };
+              const body = { 
+                contents, 
+                generationConfig: { 
+                  temperature: Math.min(Math.max(temperature, 0), 2),
+                  maxOutputTokens: 4096
+                } 
+              };
               if (systemMsg) body.systemInstruction = { parts: [{ text: systemMsg.content }] };
 
               const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${currentModel}:generateContent?key=${apiKey}`, {
