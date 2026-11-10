@@ -4,10 +4,6 @@ import { getAuth } from 'firebase-admin/auth';
 
 export const config = { runtime: 'nodejs' };
 
-if (!process.env.FIREBASE_PROJECT_ID || !process.env.FIREBASE_CLIENT_EMAIL || !process.env.FIREBASE_PRIVATE_KEY) {
-  console.error("Faltan variables de entorno de Firebase.");
-}
-
 if (!getApps().length) {
   try {
     initializeApp({
@@ -18,16 +14,10 @@ if (!getApps().length) {
       }),
     });
   } catch (err) {
-    console.error("Error inicializando Firebase:", err);
+    console.error("Error al inicializar Firebase en Vercel:", err.message);
   }
 }
 const db = getFirestore();
-
-const CORS_HEADERS = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'POST, GET, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-};
 
 const FALLBACK_MODELS = {
   groq: ['openai/gpt-oss-120b', 'openai/gpt-oss-20b'],
@@ -37,10 +27,12 @@ const FALLBACK_MODELS = {
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 export default async function handler(req, res) {
+  // 🚨 1. SIEMPRE PONEMOS LAS CABECERAS CORS PRIMERO 🚨
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
   if (req.method === 'OPTIONS') {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
     return res.status(200).end();
   }
 
@@ -49,46 +41,49 @@ export default async function handler(req, res) {
   }
 
   if (req.method === 'POST') {
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res.status(401).json({ error: 'No autorizado. Inicia sesión.' });
-    }
-    
-    const idToken = authHeader.split('Bearer ')[1];
-    let uid;
     try {
-      const decodedToken = await getAuth().verifyIdToken(idToken);
-      uid = decodedToken.uid;
-    } catch (error) {
-      return res.status(401).json({ error: 'Token inválido. Vuelve a iniciar sesión.' });
-    }
-
-    const userRef = db.collection('users').doc(uid);
-    
-    let currentCredits = 50;
-    try {
-      await db.runTransaction(async (t) => {
-        const doc = await t.get(userRef);
-        if (doc.exists) {
-          currentCredits = doc.data().credits;
-        } else {
-          t.set(userRef, { credits: 50, lastUpdated: new Date() });
-        }
-        
-        if (currentCredits <= 0) {
-          throw new Error('Sin créditos');
-        }
-        
-        t.set(userRef, { credits: currentCredits - 1, lastUpdated: new Date() }, { merge: true });
-      });
-    } catch (e) {
-      if (e.message === 'Sin créditos') {
-        return res.status(403).json({ error: 'Te has quedado sin créditos. Vuelve más tarde.' });
+      // 2. VALIDACIÓN DEL TOKEN
+      const authHeader = req.headers.authorization;
+      if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        return res.status(401).json({ error: 'No autorizado. Inicia sesión.' });
       }
-      return res.status(500).json({ error: 'Error de DB: ' + e.message });
-    }
+      
+      const idToken = authHeader.split('Bearer ')[1];
+      let uid;
+      try {
+        const decodedToken = await getAuth().verifyIdToken(idToken);
+        uid = decodedToken.uid;
+      } catch (error) {
+        return res.status(401).json({ error: 'Token inválido. Vuelve a iniciar sesión.' });
+      }
 
-    try {
+      const userRef = db.collection('users').doc(uid);
+      
+      // 3. VERIFICAR Y RESTAR CRÉDITO
+      let currentCredits = 50;
+      try {
+        await db.runTransaction(async (t) => {
+          const doc = await t.get(userRef);
+          if (doc.exists) {
+            currentCredits = doc.data().credits;
+          } else {
+            t.set(userRef, { credits: 50, lastUpdated: new Date() });
+          }
+          
+          if (currentCredits <= 0) {
+            throw new Error('Sin créditos');
+          }
+          
+          t.set(userRef, { credits: currentCredits - 1, lastUpdated: new Date() }, { merge: true });
+        });
+      } catch (e) {
+        if (e.message === 'Sin créditos') {
+          return res.status(403).json({ error: 'Te has quedado sin créditos. Vuelve más tarde.' });
+        }
+        throw new Error('Error de base de datos: ' + e.message);
+      }
+
+      // 4. LLAMADA A LA IA
       const { provider, model, messages, temperature = 0.5 } = req.body;
       
       let safeMessages = messages;
@@ -153,7 +148,9 @@ export default async function handler(req, res) {
       throw new Error('Servidores de IA saturados. Intenta de nuevo.');
 
     } catch (err) {
-      await userRef.set({ credits: currentCredits }, { merge: true });
+      // 🚨 SI HAY CUALQUIER ERROR, DEVOLVEMOS EL CRÉDITO Y EL MENSAJE EXACTO 🚨
+      // (Si el error es por falta de créditos, no llegó aquí)
+      await db.collection('users').doc(req.headers.authorization.split('Bearer ')[1]).set({ credits: currentCredits }, { merge: true }).catch(()=>{});
       return res.status(500).json({ error: err.message });
     }
   }
