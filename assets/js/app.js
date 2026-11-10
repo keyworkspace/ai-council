@@ -32,18 +32,17 @@ const fileInput = $('#file-input');
 const filePreview = $('#file-preview');
 const fileNameDisplay = $('#file-name-display');
 
-// 🚨 REFERENCIAS AL POP-UP 🚨
+// 🚨 REFERENCIAS AL POP-UP Y USUARIO 🚨
 const loginPopup = $('#login-popup');
-
+let currentUser = null;
+let loginTimer = null; 
 let activeStreamingEl = null;
 let activeStreamingAgent = null;
-let currentUser = null;
-let loginTimer = null; // Variable para el temporizador de 10 segundos
 
-// 🚨 LÓGICA DE AUTENTICACIÓN Y TEMPORIZADOR 🚨
+// ── LÓGICA DE AUTENTICACIÓN Y TEMPORIZADOR ──
 setTimeout(() => {
   if (!window.firebaseFuncs) {
-    console.error("Firebase no cargó correctamente. Revisa tu conexión o configuración.");
+    console.error("Firebase no cargó correctamente.");
     return;
   }
 
@@ -61,12 +60,16 @@ setTimeout(() => {
       document.getElementById('user-avatar').src = user.photoURL || '';
       document.getElementById('user-name').textContent = user.displayName || 'Usuario';
       
+      // Escuchar cambios en tiempo real de los créditos
       const userRef = doc(window.db, 'users', user.uid);
       onSnapshot(userRef, (docSnap) => {
-        if (docSnap.exists()) {
-          document.getElementById('user-credits').textContent = docSnap.data().credits;
-        } else {
-          document.getElementById('user-credits').textContent = '50';
+        const creditsEl = document.getElementById('user-credits');
+        if (creditsEl) {
+          if (docSnap.exists()) {
+            creditsEl.textContent = docSnap.data().credits;
+          } else {
+            creditsEl.textContent = '50';
+          }
         }
       });
     } else {
@@ -81,13 +84,16 @@ setTimeout(() => {
           if (!currentUser && loginPopup) {
             loginPopup.showModal();
           }
-        }, 10000); // 10 segundos
+        }, 10000); // 10 segundos exactos
       }
     }
   });
 
   const handleLogin = () => {
-    signInWithPopup(window.auth, window.googleProvider).catch(err => alert("Error al iniciar sesión: " + err.message));
+    signInWithPopup(window.auth, window.googleProvider).catch(err => {
+      console.error(err);
+      alert("Error al iniciar sesión: " + err.message);
+    });
   };
 
   // Botones para iniciar sesión
@@ -100,8 +106,7 @@ setTimeout(() => {
   if (document.getElementById('btn-popup-close')) {
     document.getElementById('btn-popup-close').onclick = () => {
       if (loginPopup) loginPopup.close();
-      // Si cierra el popup, cancelamos el timer para no molestarlo hasta que recargue o intente enviar
-      clearTimeout(loginTimer); 
+      clearTimeout(loginTimer); // Cancelar el timer para no molestar
     };
   }
 
@@ -109,6 +114,7 @@ setTimeout(() => {
 }, 500);
 
 
+// ── INICIALIZACIÓN DE LA APP ──
 async function init() {
   bindEvents();
   renderAgentList();
@@ -185,7 +191,7 @@ async function selectRoom(id) {
   state.currentRoomId = id;
   state.history = room.history || [];
   roomNameEl.textContent = room.name;
-  roomTopicEl.textContent = room.topic || 'Contexto inferido del primer mensaje';
+  roomTopicEl.textContent = room.topic || 'Contexto inferido';
   roomStatusEl.textContent = room.status || 'En espera';
   roomStatusEl.classList.toggle('active', room.status === 'Activa');
   maxRoundsInput.value = room.maxRounds || 3;
@@ -213,7 +219,7 @@ function updateAgentSelect(agentIds) {
 function renderMessages() {
   messagesEl.innerHTML = '';
   if (!state.history.length) {
-    messagesEl.innerHTML = `<div class="empty-state"><div class="empty-icon">🛸</div><h3>Sistemas en espera</h3><p>Envía un comunicado o adjunta un archivo para iniciar la deliberación.</p></div>`;
+    messagesEl.innerHTML = `<div class="empty-state"><div class="empty-icon">🛸</div><h3>Sistemas en espera</h3><p>Envía un comunicado o adjunta un archivo.</p></div>`;
     return;
   }
   state.history.forEach(m => appendMessage(m, false));
@@ -427,7 +433,7 @@ function setRunning(running) {
 }
 
 async function handleSend() {
-  // 🚨 VALIDACIÓN DE LOGIN ANTES DE ENVIAR 🚨
+  // Validación estricta de login
   if (!currentUser) {
     if (loginPopup) loginPopup.showModal();
     return;
