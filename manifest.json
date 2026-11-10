@@ -1,0 +1,15 @@
+{
+  "name": "AI Council · Key Industries",
+  "short_name": "AI Council",
+  "start_url": "/ai-council/",
+  "display": "standalone",
+  "background_color": "#050505",
+  "theme_color": "#00f0ff",
+  "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/2593/2593577.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
