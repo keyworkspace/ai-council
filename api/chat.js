@@ -1,9 +1,24 @@
-export const config = { runtime: 'edge' };
+import { initializeApp, cert, getApps } from 'firebase-admin/app';
+import { getFirestore } from 'firebase-admin/firestore';
+import { getAuth } from 'firebase-admin/auth';
+
+export const config = { runtime: 'nodejs' }; // 🚨 Forzamos Node.js para Firebase
+
+if (!getApps().length) {
+  initializeApp({
+    credential: cert({
+      projectId: process.env.FIREBASE_PROJECT_ID,
+      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+      privateKey: process.env.FIREBASE_PRIVATE_KEY ? process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n') : undefined,
+    }),
+  });
+}
+const db = getFirestore();
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'POST, GET, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
 };
 
 const FALLBACK_MODELS = {
@@ -13,32 +28,58 @@ const FALLBACK_MODELS = {
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-export default async function handler(req) {
+export default async function handler(req, res) {
   if (req.method === 'OPTIONS') {
-    return new Response(null, { status: 204, headers: CORS_HEADERS });
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    return res.status(200).end();
   }
 
-  const url = new URL(req.url);
-
-  if (url.pathname === '/api/chat' && req.method === 'GET') {
-    return new Response(JSON.stringify({ status: 'ok' }), {
-      status: 200, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
-    });
+  if (req.method === 'GET') {
+    return res.status(200).json({ status: 'ok' });
   }
 
-  if (url.pathname === '/api/chat' && req.method === 'POST') {
+  if (req.method === 'POST') {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ error: 'No autorizado. Inicia sesión.' });
+    }
+    
+    const idToken = authHeader.split('Bearer ')[1];
+    let uid;
     try {
-      const { provider, model, messages, temperature = 0.5 } = await req.json();
-      
+      const decodedToken = await getAuth().verifyIdToken(idToken);
+      uid = decodedToken.uid;
+    } catch (error) {
+      return res.status(401).json({ error: 'Token inválido o expirado.' });
+    }
+
+    const userRef = db.collection('users').doc(uid);
+    const userDoc = await userRef.get();
+    let currentCredits = 50; 
+
+    if (userDoc.exists) {
+      currentCredits = userDoc.data().credits;
+    } else {
+      // Si es nuevo, lo creamos con 50 créditos
+      await userRef.set({ credits: 50, lastUpdated: new Date() });
+    }
+
+    if (currentCredits <= 0) {
+      return res.status(403).json({ error: 'Te has quedado sin créditos. Vuelve mañana.' });
+    }
+
+    try {
+      const { provider, model, messages, temperature = 0.5 } = req.body;
       let safeMessages = messages;
-      // 🚨 LÍMITE AMPLIADO A 80K CARACTERES Y MANTENIENDO MÁS CONTEXTO 🚨
-      const totalChars = messages.reduce((acc, m) => acc + (m.content?.length || 0), 0);
-      if (totalChars > 80000) {
+      if (messages.reduce((acc, m) => acc + (m.content?.length || 0), 0) > 80000) {
         safeMessages = [messages[0], ...messages.slice(-15)];
       }
 
       let resultText = '';
       
+      // 1. Groq
       if (provider === 'groq') {
         const apiKey = process.env.GROQ_API_KEY;
         if (apiKey) {
@@ -49,7 +90,7 @@ export default async function handler(req) {
                 const groqController = new AbortController();
                 const timeout = setTimeout(() => groqController.abort(), 15000);
 
-                const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+                const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
                   body: JSON.stringify({ model: currentModel, messages: safeMessages, temperature, max_tokens: 4096, stream: true }),
@@ -57,25 +98,32 @@ export default async function handler(req) {
                 });
                 clearTimeout(timeout);
 
-                if (res.ok) {
-                  return new Response(res.body, {
-                    status: 200,
-                    headers: { ...CORS_HEADERS, 'Content-Type': 'text/event-stream' }
-                  });
-                } else if (res.status === 429) {
+                if (groqRes.ok) {
+                  await userRef.set({ credits: currentCredits - 1, lastUpdated: new Date() }, { merge: true });
+                  
+                  res.setHeader('Content-Type', 'text/event-stream');
+                  res.setHeader('Access-Control-Allow-Origin', '*');
+                  
+                  const reader = groqRes.body.getReader();
+                  while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    res.write(value);
+                  }
+                  return res.end();
+                } else if (groqRes.status === 429) {
                   await sleep(1500);
                   attempts++;
                 } else {
-                  break; 
+                  break;
                 }
-              } catch (e) {
-                break; 
-              }
+              } catch (e) { break; }
             }
           }
         }
       }
 
+      // 2. Gemini (Respaldo)
       const geminiKey = process.env.GEMINI_API_KEY;
       if (geminiKey) {
         for (const currentModel of FALLBACK_MODELS.gemini) {
@@ -90,16 +138,15 @@ export default async function handler(req) {
             const body = { contents, generationConfig: { temperature, maxOutputTokens: 4096 } };
             if (systemMsg) body.systemInstruction = { parts: [{ text: systemMsg.content }] };
 
-            const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${currentModel}:generateContent?key=${geminiKey}`, {
+            const geminiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${currentModel}:generateContent?key=${geminiKey}`, {
               method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
             });
 
-            if (res.ok) {
-              const data = await res.json();
+            if (geminiRes.ok) {
+              const data = await geminiRes.json();
               resultText = data.candidates?.[0]?.content?.parts?.map(p => p.text).join('') || '';
-              return new Response(JSON.stringify({ text: resultText, provider: 'gemini' }), {
-                status: 200, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
-              });
+              await userRef.set({ credits: currentCredits - 1, lastUpdated: new Date() }, { merge: true });
+              return res.status(200).json({ text: resultText, provider: 'gemini', creditsLeft: currentCredits - 1 });
             }
           } catch (e) {}
         }
@@ -108,13 +155,9 @@ export default async function handler(req) {
       throw new Error('Servidores de IA saturados. Intenta de nuevo.');
 
     } catch (err) {
-      return new Response(JSON.stringify({ error: err.message }), {
-        status: 500, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
-      });
+      return res.status(500).json({ error: err.message });
     }
   }
 
-  return new Response(JSON.stringify({ error: 'Ruta no encontrada.' }), {
-    status: 404, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
-  });
+  return res.status(404).json({ error: 'Ruta no encontrada.' });
 }
