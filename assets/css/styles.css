@@ -137,21 +137,62 @@ body {
 .msg-body { 
   background: var(--bg-input); border-radius: 4px 16px 16px 16px;
   padding: 1rem 1.25rem; border: 1px solid var(--border-color); box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+  overflow: hidden;
 }
 .msg.user .msg-body { background: rgba(0, 122, 255, 0.15); border-radius: 16px 4px 16px 16px; border-color: rgba(0, 122, 255, 0.3); color: var(--text-main); }
 .msg-header { font-size: 0.75rem; font-weight: 800; color: var(--accent-cyan); margin-bottom: 0.4rem; letter-spacing: 0.05em; text-transform: uppercase; }
 .msg.user .msg-header { color: var(--accent-blue); }
 
-/* 🚨 ARREGLO DE ESPACIOS EN EL TEXTO 🚨 */
+/* 🚨 TEXTO, ENLACES Y TABLAS 🚨 */
 .msg-text { font-size: 0.95rem; line-height: 1.6; }
-.msg-text p { margin-bottom: 0.5rem; }
+.msg-text p { margin-bottom: 0.8rem; } 
 .msg-text p:last-child { margin-bottom: 0; }
-.msg-text ul, .msg-text ol { padding-left: 1.2rem; margin-bottom: 0.5rem; }
-.msg-text li { margin-bottom: 0.3rem; }
+.msg-text ul, .msg-text ol { padding-left: 1.2rem; margin-bottom: 0.8rem; }
+.msg-text li { margin-bottom: 0.4rem; }
 .msg-text strong { color: var(--accent-cyan); font-weight: 600; }
-.msg-text hr { display: none; } /* Oculta las líneas divisorias de Markdown */
-.msg-text p:empty { display: none; } /* Oculta párrafos vacíos */
-.msg-text br { display: none; } /* Elimina saltos de línea dobles */
+.msg-text hr { display: none; } 
+.msg-text p:empty { display: none; } 
+.msg-text br { display: none; } 
+
+/* Estilos para enlaces (Links) */
+.msg-text a {
+  color: var(--accent-cyan);
+  text-decoration: none;
+  border-bottom: 1px dashed rgba(0, 240, 255, 0.5);
+  transition: all 0.2s ease;
+}
+.msg-text a:hover {
+  color: #fff;
+  border-bottom: 1px solid #fff;
+  text-shadow: 0 0 8px var(--accent-glow);
+}
+
+/* Estilos para las tablas */
+.msg-text table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1rem 0;
+  font-size: 0.85rem;
+  display: block;
+  overflow-x: auto; 
+  white-space: nowrap; 
+}
+.msg-text th, .msg-text td {
+  border: 1px solid var(--border-color);
+  padding: 0.6rem 0.8rem;
+  text-align: left;
+  white-space: normal;
+}
+.msg-text th {
+  background: rgba(0, 240, 255, 0.05);
+  color: var(--accent-cyan);
+  font-weight: 600;
+  text-transform: uppercase;
+  font-size: 0.75rem;
+  letter-spacing: 0.05em;
+}
+.msg-text tr:nth-child(even) { background: rgba(255, 255, 255, 0.02); }
+.msg-text tr:hover { background: rgba(255, 255, 255, 0.05); }
 
 @keyframes slideIn { to { opacity: 1; transform: translateY(0); } }
 
