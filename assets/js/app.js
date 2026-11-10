@@ -28,6 +28,10 @@ const dialogRoom = $('#dialog-room');
 const sidebarEl = $('#sidebar');
 const btnScrollBottom = $('#btn-scroll-bottom');
 
+// Variables para el streaming
+let activeStreamingEl = null;
+let activeStreamingAgent = null;
+
 async function init() {
   bindEvents();
   renderAgentList();
@@ -108,10 +112,27 @@ function renderMessages() {
   btnScrollBottom.classList.add('hidden');
 }
 
-// 🚨 DETECTOR DE SCROLL 🚨
 function isUserAtBottom() {
   const threshold = 150;
   return messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < threshold;
+}
+
+// 🚨 NUEVA FUNCIÓN: Crea la burbuja vacía para el streaming
+function createStreamingBubble(agentName, avatar) {
+  const div = document.createElement('div');
+  div.className = `msg agent thinking`;
+  
+  div.innerHTML = `
+    <div class="msg-avatar">${avatar || '🤖'}</div>
+    <div class="msg-body">
+      <div class="msg-header">${agentName}</div>
+      <div class="msg-text"></div>
+    </div>
+  `;
+  messagesEl.appendChild(div);
+  
+  if (isUserAtBottom()) messagesEl.scrollTop = messagesEl.scrollHeight;
+  return div;
 }
 
 function appendMessage({ agentId, agentName, avatar, text, role = 'assistant' }, scroll = true) {
@@ -132,11 +153,8 @@ function appendMessage({ agentId, agentName, avatar, text, role = 'assistant' },
   messagesEl.appendChild(div);
 
   if (scroll) {
-    if (role === 'user' || wasAtBottom) {
-      messagesEl.scrollTop = messagesEl.scrollHeight;
-    } else {
-      btnScrollBottom.classList.remove('hidden');
-    }
+    if (role === 'user' || wasAtBottom) messagesEl.scrollTop = messagesEl.scrollHeight;
+    else btnScrollBottom.classList.remove('hidden');
   }
 }
 
@@ -147,22 +165,17 @@ async function persistCurrentRoom() {
   room.status = state.isRunning ? 'Activa' : 'En espera';
   room.mode = modeSelect.value;
   room.maxRounds = Number(maxRoundsInput.value);
-  try { await saveRoom(room); } catch (e) { console.warn(e); }
+  try { await saveRoom(room); } catch (e) {}
 }
 
 function bindEvents() {
-  // Colapsar menú lateral
   $('#btn-toggle-sidebar').onclick = () => { sidebarEl.classList.toggle('collapsed'); };
-
-  // Mostrar/Ocultar botón de bajar al final
   messagesEl.onscroll = () => {
     if (isUserAtBottom()) btnScrollBottom.classList.add('hidden');
     else btnScrollBottom.classList.remove('hidden');
   };
-
   btnScrollBottom.onclick = () => { messagesEl.scrollTo({ top: messagesEl.scrollHeight, behavior: 'smooth' }); };
 
-  // Crear Sala
   $('#btn-new-room').onclick = () => {
     try {
       if (typeof dialogRoom.showModal === 'function') {
@@ -177,24 +190,20 @@ function bindEvents() {
   };
 
   $('#btn-cancel-room').onclick = () => { if (dialogRoom.close) dialogRoom.close(); };
-
   $('#form-room').onsubmit = async (e) => {
     e.preventDefault();
     const name = $('#input-room-name').value.trim();
     const checked = [...document.querySelectorAll('#agent-checkboxes input:checked')].map(c => c.value);
     if (!name || !checked.length) return;
-    
     await createManualRoom(name, checked);
     if (dialogRoom.close) dialogRoom.close();
     $('#form-room').reset();
   };
 
-  // Renombrar Sala
   $('#btn-edit-room-name').onclick = async () => {
     if (!state.currentRoomId || state.isRunning) return;
     const room = state.rooms.find(r => r.id === state.currentRoomId);
     if (!room) return;
-    
     const newName = prompt('Nuevo nombre para la sala:', room.name);
     if (newName && newName.trim() !== '' && newName !== room.name) {
       room.name = newName.trim();
@@ -204,7 +213,6 @@ function bindEvents() {
     }
   };
 
-  // Eliminar Sala
   $('#btn-delete-room').onclick = async () => {
     if (!state.currentRoomId || state.isRunning) return;
     if (!confirm('¿Eliminar esta sala y su historial?')) return;
@@ -217,7 +225,6 @@ function bindEvents() {
     roomTopicEl.textContent = '·';
   };
 
-  // Exportar Sala
   $('#btn-export').onclick = () => {
     if (!state.currentRoomId) return;
     const blob = new Blob([JSON.stringify({ room: state.rooms.find(r => r.id === state.currentRoomId), history: state.history }, null, 2)], { type: 'application/json' });
@@ -227,24 +234,22 @@ function bindEvents() {
     a.click();
   };
 
-  modeSelect.onchange = () => {
-    agentSelect.disabled = modeSelect.value !== 'directed';
-  };
-
-  // Botón de Detener (Evacuar)
+  modeSelect.onchange = () => { agentSelect.disabled = modeSelect.value !== 'directed'; };
+  
   btnStop.onclick = () => {
     if (state.abortController) {
       state.abortController.abort();
       state.abortController = null;
     }
     setRunning(false);
-    roomStatusEl.textContent = 'Detenido por el usuario';
+    if (activeStreamingEl) {
+      activeStreamingEl.classList.remove('thinking');
+      activeStreamingEl = null;
+    }
   };
 
   btnSend.onclick = handleSend;
-  userInput.onkeydown = (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); }
-  };
+  userInput.onkeydown = (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } };
 }
 
 async function createManualRoom(name, agentIds = null) {
@@ -278,7 +283,6 @@ function renderAgentCheckboxes() {
 
 function setRunning(running) {
   state.isRunning = running;
-  // 🚨 EL BOTÓN DE ENVIAR SIEMPRE ESTÁ ACTIVO PARA PERMITIR INTERRUMPIR 🚨
   btnSend.disabled = false; 
   btnStop.disabled = !running;
   if (running) {
@@ -294,33 +298,25 @@ async function handleSend() {
   const text = userInput.value.trim();
   if (!text) return;
 
-  // 🚨 INTERRUPTOR: Si las IAs están hablando, abortamos la petición en curso 🚨
   if (state.isRunning && state.abortController) {
     state.abortController.abort();
     state.abortController = null;
     setRunning(false);
+    if (activeStreamingEl) activeStreamingEl.classList.remove('thinking');
   }
 
-  // Auto-creación de sala si no hay ninguna seleccionada
   if (!state.currentRoomId) {
     const autoName = text.length > 30 ? text.substring(0, 30) + '...' : text;
     const newRoom = {
       id: crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(),
-      name: autoName,
-      topic: '', 
-      agentIds: getActiveAgents().map(a => a.id),
-      mode: 'autonomous',
-      maxRounds: 3,
-      history: [],
-      status: 'En espera',
+      name: autoName, topic: '', agentIds: getActiveAgents().map(a => a.id),
+      mode: 'autonomous', maxRounds: 3, history: [], status: 'En espera',
       createdAt: new Date().toISOString(),
     };
-    
     try { await saveRoom(newRoom); } catch(e) {}
     state.rooms.unshift(newRoom);
     state.currentRoomId = newRoom.id;
     state.history = [];
-    
     roomNameEl.textContent = newRoom.name;
     roomTopicEl.textContent = 'Contexto inferido';
     updateAgentSelect(newRoom.agentIds);
@@ -340,44 +336,59 @@ async function handleSend() {
   state.abortController = new AbortController();
   const signal = state.abortController.signal;
 
+  // 🚨 CALLBACK PARA EL STREAMING 🚨
+  const onChunk = (chunk, agentName, avatar) => {
+    if (!activeStreamingEl || activeStreamingAgent !== agentName) {
+      if (activeStreamingEl) activeStreamingEl.classList.remove('thinking');
+      activeStreamingEl = createStreamingBubble(agentName, avatar);
+      activeStreamingAgent = agentName;
+    }
+    const textEl = activeStreamingEl.querySelector('.msg-text');
+    textEl.textContent += chunk;
+    if (isUserAtBottom()) messagesEl.scrollTop = messagesEl.scrollHeight;
+  };
+
+  // 🚨 CALLBACK AL TERMINAR DE HABLAR 🚨
+  const onMessage = (m) => {
+    if (activeStreamingEl) {
+      const textEl = activeStreamingEl.querySelector('.msg-text');
+      textEl.innerHTML = window.marked ? window.marked.parse(m.text) : m.text;
+      activeStreamingEl.classList.remove('thinking');
+      activeStreamingEl = null;
+      activeStreamingAgent = null;
+    } else {
+      appendMessage(m); // Si no hubo streaming (respaldo)
+    }
+    state.history.push({ role: 'assistant', ...m });
+  };
+
   try {
     if (modeSelect.value === 'directed') {
       const agentId = agentSelect.value;
       if (!agentId) { alert('Selecciona un agente.'); setRunning(false); return; }
-      
       await runDirected({
         agentId, userText: text, history: state.history.slice(0, -1),
-        onMessage: (m) => {
-          appendMessage(m);
-          state.history.push({ role: 'assistant', ...m });
-        },
+        onMessage, onChunk
       });
     } else {
       await runAutonomous({
         history: state.history,
         selectedAgentIds: room.agentIds,
         maxRounds: Number(maxRoundsInput.value) || 3,
-        onMessage: (m) => {
-          appendMessage(m);
-          state.history.push({ role: 'assistant', ...m });
-        },
+        onMessage, onChunk,
         onStatus: (s) => { roomStatusEl.textContent = s; },
         signal,
       });
     }
     await persistCurrentRoom();
   } catch (err) {
-    // 🚨 Ignoramos el error si fue por interrumpir a la IA a propósito 🚨
     if (err.name !== 'AbortError' && !err.message.includes('interrumpida')) {
       appendMessage({ agentName: 'Sistema', avatar: '⚠️', text: `Error: ${err.message}` });
     }
   } finally {
-    // Si no fue interrumpido, apagamos el estado de "Escribiendo"
-    if (state.abortController === state.abortController) { 
-       // (esta condición es para evitar que un hilo viejo apague el nuevo)
-       if (!signal.aborted) setRunning(false); 
-    }
+    if (!signal.aborted) setRunning(false);
     state.abortController = null;
+    if (activeStreamingEl) activeStreamingEl.classList.remove('thinking');
   }
 }
 
