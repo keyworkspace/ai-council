@@ -10,12 +10,8 @@ function sanitizeText(text) {
 
 function buildMessages(agent, history) {
   const sys = { role: 'system', content: agent.systemPrompt };
-  
-  // Mantenemos un contexto amplio (últimos 12 mensajes) para que no pierdan el hilo
   let contextToSend = history;
-  if (history.length > 12) {
-    contextToSend = history.slice(-12);
-  }
+  if (history.length > 8) contextToSend = history.slice(-8);
 
   const dialogue = contextToSend.map(m => {
     const safeText = sanitizeText(m.text);
@@ -25,7 +21,6 @@ function buildMessages(agent, history) {
       content: `[${speaker}]: ${safeText}`,
     };
   });
-  
   return [sys, ...dialogue];
 }
 
@@ -46,7 +41,7 @@ function isFarewell(text) {
   return words.some(w => lower.includes(w));
 }
 
-async function agentSpeak(agent, currentHistory, onMessage, onStatus, statusMsg, signal) {
+async function agentSpeak(agent, currentHistory, onMessage, onStatus, statusMsg, signal, onChunk) {
   if (signal?.aborted) return { text: '', aborted: true };
   onStatus(statusMsg);
   
@@ -54,6 +49,9 @@ async function agentSpeak(agent, currentHistory, onMessage, onStatus, statusMsg,
     const { text } = await chat({
       provider: agent.provider, model: agent.model,
       messages: buildMessages(agent, currentHistory), temperature: agent.temperature,
+    }, (chunk) => {
+      // 🚨 Pasamos el chunk a la UI 🚨
+      if (onChunk) onChunk(chunk, agent.name, agent.avatar);
     });
     
     if (signal?.aborted) return { text: '', aborted: true };
@@ -69,15 +67,13 @@ async function agentSpeak(agent, currentHistory, onMessage, onStatus, statusMsg,
 
     return { text: cleanText, aborted: false };
   } catch (err) {
-    if (signal?.aborted || err.name === 'AbortError') {
-      return { text: '', aborted: true };
-    }
+    if (signal?.aborted || err.name === 'AbortError') return { text: '', aborted: true };
     onMessage({ agentId: agent.id, agentName: agent.name, avatar: agent.avatar, text: `⚠️ Error: ${err.message}` });
     return { text: '', aborted: false };
   }
 }
 
-export async function runAutonomous({ history, selectedAgentIds, maxRounds, onMessage, onStatus, signal }) {
+export async function runAutonomous({ history, selectedAgentIds, maxRounds, onMessage, onStatus, signal, onChunk }) {
   const agents = selectedAgentIds.map(getAgentById).filter(a => a && a.active);
   if (!agents.length) throw new Error('No hay agentes activos.');
 
@@ -85,72 +81,59 @@ export async function runAutonomous({ history, selectedAgentIds, maxRounds, onMe
   const lastUserMsg = history[history.length - 1]?.text || '';
   const director = agents.find(a => a.id === 'director');
 
-  // 1. ¿El usuario se está despidiendo? Se detiene todo.
   if (isFarewell(lastUserMsg)) {
-    if (director) await agentSpeak(director, currentHistory, onMessage, onStatus, `J.A.R.V.I.S. se despide`, signal);
+    if (director) await agentSpeak(director, currentHistory, onMessage, onStatus, `Despidiéndose`, signal, onChunk);
     return; 
   }
 
-  // 2. ¿El usuario llamó a alguien específico? Habla solo ese.
   const requestedId = detectRequestedAgent(lastUserMsg);
   if (requestedId) {
     const targetAgent = agents.find(a => a.id === requestedId);
     if (targetAgent) {
       onStatus(`Llamando a ${targetAgent.name}...`);
-      await agentSpeak(targetAgent, currentHistory, onMessage, onStatus, `${targetAgent.name} responde`, signal);
+      await agentSpeak(targetAgent, currentHistory, onMessage, onStatus, `Respondiendo`, signal, onChunk);
       return; 
     }
   }
 
-  // 3. DEBATE CONTINUO (El flujo principal)
-  // Definimos el orden de la mesa redonda
+  const analista = agents.find(a => a.id === 'analista');
+  const critico = agents.find(a => a.id === 'critico');
+  const estratega = agents.find(a => a.id === 'estratega');
   const order = ['director', 'analista', 'critico', 'estratega'];
-  let startIndex = 0;
-
-  // Buscamos quién fue el último agente que habló para saber a quién le toca
-  const lastAssistant = [...history].reverse().find(m => m.role === 'assistant');
   
+  let startIndex = 0;
+  const lastAssistant = [...history].reverse().find(m => m.role === 'assistant');
   if (lastAssistant) {
     const lastIdx = order.indexOf(lastAssistant.agentId);
     if (lastIdx !== -1) {
       startIndex = (lastIdx + 1) % order.length;
-      // Si el siguiente es el director, lo saltamos para que no reinicie la sesión.
-      // Preferimos que el debate siga fluyendo entre los analistas y estrategas.
       if (order[startIndex] === 'director') startIndex = 1; 
     }
   }
 
-  // El debate se ejecuta durante la cantidad de turnos configurada (Ciclos)
   for (let i = 0; i < maxRounds; i++) {
     if (signal?.aborted) return;
-
     const currentAgentId = order[(startIndex + i) % order.length];
     const currentAgent = agents.find(a => a.id === currentAgentId);
 
     if (currentAgent) {
-      const res = await agentSpeak(
-        currentAgent, 
-        currentHistory, 
-        onMessage, 
-        onStatus, 
-        `${currentAgent.name} interviene...`, 
-        signal
-      );
-      
+      const res = await agentSpeak(currentAgent, currentHistory, onMessage, onStatus, `${currentAgent.name} interviene...`, signal, onChunk);
       if (res.aborted) return;
     }
   }
-  
   onStatus('Sesión en pausa. Esperando tu intervención.');
 }
 
-export async function runDirected({ agentId, userText, history, onMessage }) {
+export async function runDirected({ agentId, userText, history, onMessage, onChunk }) {
   const agent = getAgentById(agentId);
   if (!agent || !agent.active) throw new Error('Agente no disponible.');
   const enrichedHistory = [...history, { role: 'user', agentName: 'Usuario', text: userText }];
+  
   const { text } = await chat({
     provider: agent.provider, model: agent.model,
     messages: buildMessages(agent, enrichedHistory), temperature: agent.temperature,
+  }, (chunk) => {
+    if (onChunk) onChunk(chunk, agent.name, agent.avatar);
   });
   
   const cleanText = sanitizeText(text).replace('[PAUSA_USUARIO]', '').trim();
