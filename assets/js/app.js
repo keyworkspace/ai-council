@@ -74,9 +74,7 @@ async function selectRoom(id) {
   state.currentRoomId = id;
   state.history = room.history || [];
   roomNameEl.textContent = room.name;
-  
   roomTopicEl.textContent = room.topic || 'Contexto inferido del primer mensaje';
-  
   roomStatusEl.textContent = room.status || 'En espera';
   roomStatusEl.classList.toggle('active', room.status === 'Activa');
   maxRoundsInput.value = room.maxRounds || 3;
@@ -112,14 +110,12 @@ function renderMessages() {
 
 // 🚨 DETECTOR DE SCROLL 🚨
 function isUserAtBottom() {
-  const threshold = 150; // Margen de 150px
+  const threshold = 150;
   return messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < threshold;
 }
 
 function appendMessage({ agentId, agentName, avatar, text, role = 'assistant' }, scroll = true) {
-  // Guardamos si el usuario estaba abajo ANTES de añadir el nuevo mensaje
   const wasAtBottom = isUserAtBottom();
-
   const div = document.createElement('div');
   div.className = `msg ${role === 'user' ? 'user' : 'agent'}`;
   
@@ -135,13 +131,10 @@ function appendMessage({ agentId, agentName, avatar, text, role = 'assistant' },
   `;
   messagesEl.appendChild(div);
 
-  // 🚨 LÓGICA DEL SCROLL INTELIGENTE 🚨
   if (scroll) {
     if (role === 'user' || wasAtBottom) {
-      // Si soy yo quien envía, o si ya estabas abajo, bajamos automáticamente
       messagesEl.scrollTop = messagesEl.scrollHeight;
     } else {
-      // Si no estabas abajo y es un mensaje de la IA, mostramos el botón
       btnScrollBottom.classList.remove('hidden');
     }
   }
@@ -158,23 +151,18 @@ async function persistCurrentRoom() {
 }
 
 function bindEvents() {
-  $('#btn-toggle-sidebar').onclick = () => {
-    sidebarEl.classList.toggle('collapsed');
-  };
+  // Colapsar menú lateral
+  $('#btn-toggle-sidebar').onclick = () => { sidebarEl.classList.toggle('collapsed'); };
 
-  // 🚨 EVENTOS DEL SCROLL 🚨
+  // Mostrar/Ocultar botón de bajar al final
   messagesEl.onscroll = () => {
-    if (isUserAtBottom()) {
-      btnScrollBottom.classList.add('hidden');
-    } else {
-      btnScrollBottom.classList.remove('hidden');
-    }
+    if (isUserAtBottom()) btnScrollBottom.classList.add('hidden');
+    else btnScrollBottom.classList.remove('hidden');
   };
 
-  btnScrollBottom.onclick = () => {
-    messagesEl.scrollTo({ top: messagesEl.scrollHeight, behavior: 'smooth' });
-  };
+  btnScrollBottom.onclick = () => { messagesEl.scrollTo({ top: messagesEl.scrollHeight, behavior: 'smooth' }); };
 
+  // Crear Sala
   $('#btn-new-room').onclick = () => {
     try {
       if (typeof dialogRoom.showModal === 'function') {
@@ -201,6 +189,7 @@ function bindEvents() {
     $('#form-room').reset();
   };
 
+  // Renombrar Sala
   $('#btn-edit-room-name').onclick = async () => {
     if (!state.currentRoomId || state.isRunning) return;
     const room = state.rooms.find(r => r.id === state.currentRoomId);
@@ -215,6 +204,7 @@ function bindEvents() {
     }
   };
 
+  // Eliminar Sala
   $('#btn-delete-room').onclick = async () => {
     if (!state.currentRoomId || state.isRunning) return;
     if (!confirm('¿Eliminar esta sala y su historial?')) return;
@@ -227,6 +217,7 @@ function bindEvents() {
     roomTopicEl.textContent = '·';
   };
 
+  // Exportar Sala
   $('#btn-export').onclick = () => {
     if (!state.currentRoomId) return;
     const blob = new Blob([JSON.stringify({ room: state.rooms.find(r => r.id === state.currentRoomId), history: state.history }, null, 2)], { type: 'application/json' });
@@ -240,12 +231,14 @@ function bindEvents() {
     agentSelect.disabled = modeSelect.value !== 'directed';
   };
 
+  // Botón de Detener (Evacuar)
   btnStop.onclick = () => {
     if (state.abortController) {
       state.abortController.abort();
       state.abortController = null;
     }
     setRunning(false);
+    roomStatusEl.textContent = 'Detenido por el usuario';
   };
 
   btnSend.onclick = handleSend;
@@ -285,17 +278,30 @@ function renderAgentCheckboxes() {
 
 function setRunning(running) {
   state.isRunning = running;
-  btnSend.disabled = running;
+  // 🚨 EL BOTÓN DE ENVIAR SIEMPRE ESTÁ ACTIVO PARA PERMITIR INTERRUMPIR 🚨
+  btnSend.disabled = false; 
   btnStop.disabled = !running;
-  roomStatusEl.textContent = running ? 'Activa' : 'En espera';
-  roomStatusEl.classList.toggle('active', running);
+  if (running) {
+    roomStatusEl.textContent = 'Activa';
+    roomStatusEl.classList.add('active');
+  } else {
+    roomStatusEl.textContent = 'En espera';
+    roomStatusEl.classList.remove('active');
+  }
 }
 
 async function handleSend() {
-  if (state.isRunning) return;
   const text = userInput.value.trim();
   if (!text) return;
 
+  // 🚨 INTERRUPTOR: Si las IAs están hablando, abortamos la petición en curso 🚨
+  if (state.isRunning && state.abortController) {
+    state.abortController.abort();
+    state.abortController = null;
+    setRunning(false);
+  }
+
+  // Auto-creación de sala si no hay ninguna seleccionada
   if (!state.currentRoomId) {
     const autoName = text.length > 30 ? text.substring(0, 30) + '...' : text;
     const newRoom = {
@@ -327,7 +333,6 @@ async function handleSend() {
 
   const userMsg = { role: 'user', agentName: 'Usuario', text };
   state.history.push(userMsg);
-  // Forzamos el scroll al enviar un mensaje
   appendMessage({ agentName: 'Usuario', text, role: 'user' });
   userInput.value = '';
 
@@ -362,9 +367,16 @@ async function handleSend() {
     }
     await persistCurrentRoom();
   } catch (err) {
-    appendMessage({ agentName: 'Sistema', avatar: '⚠️', text: `Error: ${err.message}` });
+    // 🚨 Ignoramos el error si fue por interrumpir a la IA a propósito 🚨
+    if (err.name !== 'AbortError' && !err.message.includes('interrumpida')) {
+      appendMessage({ agentName: 'Sistema', avatar: '⚠️', text: `Error: ${err.message}` });
+    }
   } finally {
-    setRunning(false);
+    // Si no fue interrumpido, apagamos el estado de "Escribiendo"
+    if (state.abortController === state.abortController) { 
+       // (esta condición es para evitar que un hilo viejo apague el nuevo)
+       if (!signal.aborted) setRunning(false); 
+    }
     state.abortController = null;
   }
 }
