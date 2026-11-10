@@ -9,7 +9,7 @@ const state = {
   history: [],            
   abortController: null,
   isRunning: false,
-  attachedFile: null, // 🚨 AQUÍ GUARDAMOS EL ARCHIVO
+  attachedFile: null,
 };
 
 const $ = (sel) => document.querySelector(sel);
@@ -28,14 +28,54 @@ const userInput = $('#user-input');
 const dialogRoom = $('#dialog-room');
 const sidebarEl = $('#sidebar');
 const btnScrollBottom = $('#btn-scroll-bottom');
-
-// 🚨 REFERENCIAS A LOS ELEMENTOS DEL ARCHIVO 🚨
 const fileInput = $('#file-input');
 const filePreview = $('#file-preview');
 const fileNameDisplay = $('#file-name-display');
 
 let activeStreamingEl = null;
 let activeStreamingAgent = null;
+let currentUser = null;
+
+// 🚨 LÓGICA DE AUTENTICACIÓN 🚨
+setTimeout(() => {
+  if (!window.firebaseFuncs) {
+    console.error("Firebase no cargó correctamente.");
+    return;
+  }
+
+  const { onAuthStateChanged, signInWithPopup, signOut, doc, onSnapshot } = window.firebaseFuncs;
+  
+  onAuthStateChanged(window.auth, async (user) => {
+    if (user) {
+      currentUser = user;
+      document.getElementById('btn-login').style.display = 'none';
+      document.getElementById('user-info').style.display = 'flex';
+      document.getElementById('user-avatar').src = user.photoURL || '';
+      document.getElementById('user-name').textContent = user.displayName || 'Usuario';
+      
+      // Escuchar cambios en tiempo real de los créditos
+      const userRef = doc(window.db, 'users', user.uid);
+      onSnapshot(userRef, (docSnap) => {
+        if (docSnap.exists()) {
+          document.getElementById('user-credits').textContent = docSnap.data().credits;
+        } else {
+          document.getElementById('user-credits').textContent = '50';
+        }
+      });
+    } else {
+      currentUser = null;
+      document.getElementById('btn-login').style.display = 'block';
+      document.getElementById('user-info').style.display = 'none';
+    }
+  });
+
+  document.getElementById('btn-login').onclick = () => {
+    signInWithPopup(window.auth, window.googleProvider).catch(err => alert("Error al iniciar sesión: " + err.message));
+  };
+  
+  document.getElementById('btn-logout').onclick = () => signOut(window.auth);
+}, 500);
+
 
 async function init() {
   bindEvents();
@@ -140,7 +180,7 @@ function updateAgentSelect(agentIds) {
 function renderMessages() {
   messagesEl.innerHTML = '';
   if (!state.history.length) {
-    messagesEl.innerHTML = `<div class="empty-state"><div class="empty-icon">🛸</div><h3>Sistemas en espera</h3><p>Envía un comunicado o adjunta un archivo para iniciar la deliberación.</p></div>`;
+    messagesEl.innerHTML = `<div class="empty-state"><div class="empty-icon">🛸</div><h3>Sistemas en espera</h3><p>Envía un comunicado o adjunta un archivo.</p></div>`;
     return;
   }
   state.history.forEach(m => appendMessage(m, false));
@@ -203,32 +243,21 @@ async function persistCurrentRoom() {
 
 function bindEvents() {
   $('#btn-toggle-sidebar').onclick = () => { sidebarEl.classList.toggle('collapsed'); };
-  
   messagesEl.onscroll = () => {
     if (isUserAtBottom()) btnScrollBottom.classList.add('hidden');
     else btnScrollBottom.classList.remove('hidden');
   };
-  
   btnScrollBottom.onclick = () => { messagesEl.scrollTo({ top: messagesEl.scrollHeight, behavior: 'smooth' }); };
 
-  // 🚨 EVENTOS PARA CARGAR ARCHIVOS 🚨
   $('#btn-attach').onclick = () => fileInput.click();
 
   fileInput.onchange = (e) => {
     const file = e.target.files[0];
     if (!file) return;
-
-    if (file.size > 500000) { // 500 KB máximo para no romper la API
-      alert('El archivo es demasiado grande (máximo 500KB).');
-      return;
-    }
-
+    if (file.size > 500000) { alert('El archivo es demasiado grande (máximo 500KB).'); return; }
     const reader = new FileReader();
     reader.onload = (event) => {
-      state.attachedFile = {
-        name: file.name,
-        content: event.target.result
-      };
+      state.attachedFile = { name: file.name, content: event.target.result };
       fileNameDisplay.textContent = `📄 ${file.name}`;
       filePreview.classList.remove('hidden');
     };
@@ -241,8 +270,8 @@ function bindEvents() {
     filePreview.classList.add('hidden');
   };
 
-  // Crear Sala
   $('#btn-new-room').onclick = () => {
+    if (!currentUser) { alert('Inicia sesión primero.'); return; }
     try {
       if (typeof dialogRoom.showModal === 'function') {
         renderAgentCheckboxes();
@@ -256,7 +285,6 @@ function bindEvents() {
   };
 
   $('#btn-cancel-room').onclick = () => { if (dialogRoom.close) dialogRoom.close(); };
-  
   $('#form-room').onsubmit = async (e) => {
     e.preventDefault();
     const name = $('#input-room-name').value.trim();
@@ -358,9 +386,9 @@ function setRunning(running) {
 }
 
 async function handleSend() {
-  let text = userInput.value.trim();
+  if (!currentUser) { alert('Debes iniciar sesión con Google para hablar con el consejo.'); return; }
   
-  // 🚨 VALIDACIÓN: Debe haber texto O un archivo 🚨
+  let text = userInput.value.trim();
   if (!text && !state.attachedFile) return;
 
   if (state.isRunning && state.abortController) {
@@ -390,13 +418,10 @@ async function handleSend() {
     renderAgentList();
   }
 
-  // 🚨 PREPARACIÓN DEL MENSAJE CON ARCHIVO 🚨
   let finalMessageText = text;
   if (state.attachedFile) {
     const fileBlock = `\n\n[ARCHIVO ADJUNTO: ${state.attachedFile.name}]\n\`\`\`\n${state.attachedFile.content}\n\`\`\`\n\n`;
     finalMessageText = text ? `${text}${fileBlock}` : `Analiza el siguiente archivo:\n${fileBlock}`;
-    
-    // Limpiamos el archivo para que no se envíe dos veces
     state.attachedFile = null;
     fileInput.value = '';
     filePreview.classList.add('hidden');
@@ -408,7 +433,6 @@ async function handleSend() {
   const userMsg = { role: 'user', agentName: 'Usuario', text: finalMessageText };
   state.history.push(userMsg);
   
-  // Mostramos en el chat un resumen si hay archivo
   if (finalMessageText.includes('[ARCHIVO ADJUNTO:')) {
     const displayText = text ? `${text}\n\n*(Archivo adjunto: ${userMsg.text.match(/\[ARCHIVO ADJUNTO: (.*?)\]/)[1]})*` : `*(Archivo adjunto enviado al consejo)*`;
     appendMessage({ agentName: 'Usuario', text: displayText, role: 'user' });
@@ -450,7 +474,6 @@ async function handleSend() {
     if (modeSelect.value === 'directed') {
       const agentId = agentSelect.value;
       if (!agentId) { alert('Selecciona un agente.'); setRunning(false); return; }
-      
       await runDirected({
         agentId, userText: finalMessageText, history: state.history.slice(0, -1),
         onMessage, onChunk,
