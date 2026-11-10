@@ -19,7 +19,7 @@ export default async function handler(req) {
   const url = new URL(req.url);
 
   if (url.pathname === '/api/chat' && req.method === 'GET') {
-    return new Response(JSON.stringify({ status: 'ok', provider: 'vercel-edge-fallback' }), {
+    return new Response(JSON.stringify({ status: 'ok', provider: 'vercel-edge-stream' }), {
       status: 200,
       headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
     });
@@ -39,11 +39,6 @@ export default async function handler(req) {
         safeMessages = [messages[0], ...messages.slice(-5)];
       }
 
-      let resultText = '';
-      let finalProvider = provider;
-      let finalModel = model;
-      let lastError = '';
-
       if (provider === 'groq') {
         const apiKey = process.env.GROQ_API_KEY;
         if (!apiKey) throw new Error('GROQ_API_KEY no configurada.');
@@ -59,29 +54,33 @@ export default async function handler(req) {
                 model: currentModel, 
                 messages: safeMessages, 
                 temperature, 
-                max_tokens: 4096
+                max_tokens: 4096,
+                stream: true // 🚨 ACTIVAMOS STREAMING
               }),
             });
 
             if (res.ok) {
-              const data = await res.json();
-              resultText = data.choices?.[0]?.message?.content || '';
-              finalModel = currentModel;
-              break;
-            } else {
-              lastError = `Groq ${res.status}: ${await res.text()}`;
+              // Devolvemos el stream directamente al frontend
+              return new Response(res.body, {
+                status: 200,
+                headers: { ...CORS_HEADERS, 'Content-Type': 'text/event-stream' }
+              });
             }
           } catch (e) {
-            lastError = e.message;
+            console.warn(`Fallo en ${currentModel}, intentando siguiente...`);
           }
         }
       }
 
-      if (!resultText) {
+      // ── RESPALDO: Si Groq falla o es Gemini, usamos JSON normal ──
+      let resultText = '';
+      let finalProvider = provider;
+      let finalModel = model;
+      
+      if (provider === 'gemini' || !resultText) {
         const apiKey = process.env.GEMINI_API_KEY;
         if (apiKey) {
           const modelsToTry = [...new Set([model, ...FALLBACK_MODELS.gemini])];
-
           for (const currentModel of modelsToTry) {
             try {
               const systemMsg = safeMessages.find(m => m.role === 'system');
@@ -94,13 +93,7 @@ export default async function handler(req) {
                 contents.push({ role: 'user', parts: [{ text: 'Continúa.' }] });
               }
 
-              const body = { 
-                contents, 
-                generationConfig: { 
-                  temperature: Math.min(Math.max(temperature, 0), 2),
-                  maxOutputTokens: 4096
-                } 
-              };
+              const body = { contents, generationConfig: { temperature: Math.min(Math.max(temperature, 0), 2), maxOutputTokens: 4096 } };
               if (systemMsg) body.systemInstruction = { parts: [{ text: systemMsg.content }] };
 
               const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${currentModel}:generateContent?key=${apiKey}`, {
@@ -115,28 +108,19 @@ export default async function handler(req) {
                 finalProvider = 'gemini';
                 finalModel = currentModel;
                 break;
-              } else {
-                lastError = `Gemini ${res.status}: ${await res.text()}`;
               }
-            } catch (e) {
-              lastError = e.message;
-            }
+            } catch (e) {}
           }
         }
       }
 
       if (resultText) {
-        return new Response(JSON.stringify({ 
-          text: resultText, 
-          provider: finalProvider, 
-          model: finalModel,
-          fallbackUsed: finalModel !== model 
-        }), {
+        return new Response(JSON.stringify({ text: resultText, provider: finalProvider, model: finalModel }), {
           status: 200,
           headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
         });
       } else {
-        throw new Error(`Todos los modelos fallaron. Último error: ${lastError}`);
+        throw new Error(`Todos los modelos fallaron.`);
       }
 
     } catch (err) {
