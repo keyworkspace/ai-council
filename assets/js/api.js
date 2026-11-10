@@ -2,7 +2,7 @@ import { WORKER_URL } from './config.js';
 
 export async function chat({ provider, model, messages, temperature = 0.5 }, onChunk) {
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 60000); // 60s
+  const timeoutId = setTimeout(() => controller.abort(), 60000);
 
   let res;
   try {
@@ -15,8 +15,8 @@ export async function chat({ provider, model, messages, temperature = 0.5 }, onC
     clearTimeout(timeoutId);
   } catch (networkErr) {
     clearTimeout(timeoutId);
-    if (networkErr.name === 'AbortError') throw new Error("Petición interrumpida o tiempo de espera agotado.");
-    throw new Error(`Fallo de red. Detalle: ${networkErr.message}`);
+    if (networkErr.name === 'AbortError') throw new Error("La IA tardó demasiado en responder.");
+    throw new Error(`Fallo de red (posible saturación de la API). Intenta de nuevo.`);
   }
 
   if (!res.ok) {
@@ -24,27 +24,23 @@ export async function chat({ provider, model, messages, temperature = 0.5 }, onC
     throw new Error(`Error HTTP ${res.status}: ${errText.slice(0, 100)}`);
   }
 
-  const reader = res.body.getReader();
-  const decoder = new TextDecoder();
-  let fullText = '';
-  let isStream = false;
-  let buffer = '';
+  // 🚨 DETECTOR DE TIPO DE RESPUESTA 🚨
+  const contentType = res.headers.get('content-type') || '';
 
-  // 🚨 LEEMOS LA RESPUESTA EN TIEMPO REAL 🚨
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
+  if (contentType.includes('text/event-stream')) {
+    // Es un STREAM (Letra por letra)
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let fullText = '';
+    let buffer = '';
 
-    buffer += decoder.decode(value, { stream: true });
-    
-    // Si el texto empieza con "data: ", sabemos que es un stream.
-    if (!isStream && buffer.trim().startsWith('data: ')) {
-      isStream = true;
-    }
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
 
-    if (isStream) {
+      buffer += decoder.decode(value, { stream: true });
       const lines = buffer.split('\n');
-      buffer = lines.pop(); // Guardamos la última línea incompleta
+      buffer = lines.pop() || ''; 
 
       for (const line of lines) {
         if (line.startsWith('data: ') && line !== 'data: [DONE]') {
@@ -53,23 +49,17 @@ export async function chat({ provider, model, messages, temperature = 0.5 }, onC
             const delta = data.choices?.[0]?.delta?.content || '';
             if (delta) {
               fullText += delta;
-              if (onChunk) onChunk(delta); // Pintamos la letra
+              if (onChunk) onChunk(delta);
             }
-          } catch (e) {}
+          } catch (e) { /* Ignorar líneas incompletas */ }
         }
       }
-    } else {
-      // Si no es un stream, es un JSON normal, lo acumulamos
-      fullText += buffer;
-      buffer = ''; 
     }
-  }
-
-  // Al terminar, devolvemos todo el texto
-  if (isStream) {
     return { text: fullText, provider };
+
   } else {
-    const data = JSON.parse(fullText);
+    // Es un JSON NORMAL (Respaldo de Gemini o texto completo)
+    const data = await res.json();
     if (onChunk) onChunk(data.text);
     return data;
   }
