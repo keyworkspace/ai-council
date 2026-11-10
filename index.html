@@ -5,7 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>Key Industries · AI Council</title>
   
-  <!-- 🚨 CONFIGURACIÓN PWA 🚨 -->
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#050505">
   <meta name="apple-mobile-web-app-capable" content="yes">
@@ -16,8 +15,32 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
   
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
+  <!-- 🚨 FIREBASE SDK 🚨 -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+    import { getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+    import { getFirestore, doc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+
+    // 🚨 TU CONFIGURACIÓN DE FIREBASE 🚨
+    const firebaseConfig = {
+      apiKey: "AIzaSyDIt8vIJ6S0MWdY5naXSDuy7kEf2RwlJ-w",
+      authDomain: "ai-council-18bd7.firebaseapp.com",
+      projectId: "ai-council-18bd7",
+      storageBucket: "ai-council-18bd7.firebasestorage.app",
+      messagingSenderId: "717086047531",
+      appId: "1:717086047531:web:933650322e9a79c5ca596e",
+      measurementId: "G-0Q7QSR76NY"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    window.auth = getAuth(app);
+    window.db = getFirestore(app);
+    window.googleProvider = new GoogleAuthProvider();
+    window.firebaseFuncs = { signInWithPopup, onAuthStateChanged, signOut, doc, onSnapshot };
+  </script>
+
   <script>
-    // Cache buster automático
     const autoVersion = new Date().getTime();
     const link = document.createElement('link');
     link.rel = 'stylesheet';
@@ -28,13 +51,10 @@
     script.src = 'assets/js/app.js?v=' + autoVersion;
     document.head.appendChild(script);
 
-    // Registro del Service Worker
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
         navigator.serviceWorker.register('sw.js').then(reg => {
-          console.log('Service Worker registrado con éxito:', reg.scope);
-        }).catch(err => {
-          console.log('Fallo al registrar el Service Worker:', err);
+          console.log('Service Worker registrado:', reg.scope);
         });
       });
     }
@@ -42,7 +62,6 @@
 </head>
 <body>
   <div id="app">
-    <!-- Panel lateral -->
     <aside class="sidebar" id="sidebar">
       <div class="logo-container">
         <div class="logo-icon">⚡</div>
@@ -61,9 +80,20 @@
       
       <div class="section-title">Personal Asignado</div>
       <ul id="agent-list" class="agent-list"></ul>
+
+      <!-- 🚨 SECCIÓN DE USUARIO (LOGIN Y CRÉDITOS) 🚨 -->
+      <div id="auth-section" style="margin-top: auto; border-top: 1px solid var(--border-color); padding-top: 1rem;">
+        <button id="btn-login" class="btn-primary" style="width: 100%;">Iniciar sesión con Google</button>
+        
+        <div id="user-info" class="hidden" style="display: flex; align-items: center; gap: 0.5rem; justify-content: space-between;">
+          <img id="user-avatar" src="" style="width: 32px; height: 32px; border-radius: 50%;">
+          <span id="user-name" style="font-size: 0.85rem; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"></span>
+          <span id="user-credits" class="badge" style="background: var(--accent-cyan); color: #000; font-weight: bold;">50</span>
+          <button id="btn-logout" class="btn-icon-mini" title="Cerrar sesión" style="color: var(--danger);">✖</button>
+        </div>
+      </div>
     </aside>
 
-    <!-- Área principal -->
     <main class="main">
       <header class="room-header">
         <div class="header-info">
@@ -85,7 +115,7 @@
         <div class="empty-state">
           <div class="empty-icon">🛸</div>
           <h3>Sistemas en espera</h3>
-          <p>Envía un comunicado o adjunta un archivo para iniciar la deliberación.</p>
+          <p>Inicia sesión para comenzar la deliberación.</p>
         </div>
       </div>
 
@@ -110,10 +140,8 @@
         <div class="composer-input-wrapper">
           <textarea id="user-input" rows="1" placeholder="Escribe un comunicado para el consejo..."></textarea>
           
-          <!-- 🚨 INPUT DE ARCHIVO OCULTO 🚨 -->
           <input type="file" id="file-input" accept=".html,.css,.js,.json,.txt,.md" style="display: none;">
           
-          <!-- 🚨 BOTÓN DE ADJUNTAR 🚨 -->
           <button id="btn-attach" class="btn-icon" title="Adjuntar archivo (HTML, CSS, TXT)" style="background: transparent; border: none; font-size: 1.2rem; width: 40px; height: 40px;">
             📎
           </button>
@@ -123,7 +151,6 @@
           </button>
         </div>
         
-        <!-- 🚨 VISTA PREVIA DEL ARCHIVO ADJUNTO 🚨 -->
         <div id="file-preview" class="file-preview hidden">
           <span id="file-name-display">archivo.html</span>
           <button id="btn-remove-file" class="btn-remove-file" title="Quitar archivo">✖</button>
@@ -132,7 +159,6 @@
     </main>
   </div>
 
-  <!-- Modal de nueva sala -->
   <dialog id="dialog-room" class="tech-dialog">
     <form method="dialog" id="form-room">
       <h3>Inicializar Nueva Sesión</h3>
