@@ -25,6 +25,7 @@ const btnSend = $('#btn-send');
 const btnStop = $('#btn-stop');
 const userInput = $('#user-input');
 const dialogRoom = $('#dialog-room');
+const sidebarEl = $('#sidebar');
 
 async function init() {
   bindEvents();
@@ -73,7 +74,6 @@ async function selectRoom(id) {
   state.history = room.history || [];
   roomNameEl.textContent = room.name;
   
-  // Si no hay tema (porque ahora no lo pedimos al crear), mostramos un texto por defecto
   roomTopicEl.textContent = room.topic || 'Contexto inferido del primer mensaje';
   
   roomStatusEl.textContent = room.status || 'En espera';
@@ -112,7 +112,10 @@ function appendMessage({ agentId, agentName, avatar, text, role = 'assistant' },
   const div = document.createElement('div');
   div.className = `msg ${role === 'user' ? 'user' : 'agent'}`;
   
-  const htmlContent = window.marked ? window.marked.parse(text) : text;
+  // 🚨 LIMPIEZA DE SALTOS DE LÍNEA EXCESIVOS 🚨
+  // Reemplaza 3 o más saltos de línea seguidos por solo 2.
+  const cleanText = text.replace(/\n{3,}/g, '\n\n');
+  const htmlContent = window.marked ? window.marked.parse(cleanText) : cleanText;
   
   div.innerHTML = `
     <div class="msg-avatar">${avatar || (role === 'user' ? '👤' : '🤖')}</div>
@@ -136,7 +139,11 @@ async function persistCurrentRoom() {
 }
 
 function bindEvents() {
-  // Crear Sala (Solo pide nombre ahora)
+  // 🚨 BOTÓN PARA COLAPSAR EL SIDEBAR 🚨
+  $('#btn-toggle-sidebar').onclick = () => {
+    sidebarEl.classList.toggle('collapsed');
+  };
+
   $('#btn-new-room').onclick = () => {
     try {
       if (typeof dialogRoom.showModal === 'function') {
@@ -163,7 +170,6 @@ function bindEvents() {
     $('#form-room').reset();
   };
 
-  // Botón para Renombrar Sala
   $('#btn-edit-room-name').onclick = async () => {
     if (!state.currentRoomId || state.isRunning) return;
     const room = state.rooms.find(r => r.id === state.currentRoomId);
@@ -221,7 +227,7 @@ async function createManualRoom(name, agentIds = null) {
   const newRoom = {
     id: crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(),
     name: name,
-    topic: '', // Ya no pedimos tema, quedará vacío
+    topic: '',
     agentIds: agentIds || getActiveAgents().map(a => a.id),
     mode: 'autonomous',
     maxRounds: 3,
