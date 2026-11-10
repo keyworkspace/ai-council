@@ -11,17 +11,15 @@ function sanitizeText(text) {
 function buildMessages(agent, history) {
   const sys = { role: 'system', content: agent.systemPrompt };
   
-  // Truncamos el historial si es muy largo para no perder el foco
+  // Mantenemos un contexto amplio (últimos 12 mensajes) para que no pierdan el hilo
   let contextToSend = history;
-  if (history.length > 8) {
-    contextToSend = history.slice(-8);
+  if (history.length > 12) {
+    contextToSend = history.slice(-12);
   }
 
-  // 🚨 FORMATO DE TRANSCRIPCIÓN DE SALA DE JUNTAS 🚨
   const dialogue = contextToSend.map(m => {
     const safeText = sanitizeText(m.text);
     const speaker = m.role === 'user' ? 'USUARIO' : m.agentName;
-    
     return {
       role: m.role === 'user' ? 'user' : 'assistant',
       content: `[${speaker}]: ${safeText}`,
@@ -71,6 +69,9 @@ async function agentSpeak(agent, currentHistory, onMessage, onStatus, statusMsg,
 
     return { text: cleanText, aborted: false };
   } catch (err) {
+    if (signal?.aborted || err.name === 'AbortError') {
+      return { text: '', aborted: true };
+    }
     onMessage({ agentId: agent.id, agentName: agent.name, avatar: agent.avatar, text: `⚠️ Error: ${err.message}` });
     return { text: '', aborted: false };
   }
@@ -84,46 +85,63 @@ export async function runAutonomous({ history, selectedAgentIds, maxRounds, onMe
   const lastUserMsg = history[history.length - 1]?.text || '';
   const director = agents.find(a => a.id === 'director');
 
+  // 1. ¿El usuario se está despidiendo? Se detiene todo.
   if (isFarewell(lastUserMsg)) {
-    if (director) await agentSpeak(director, currentHistory, onMessage, onStatus, `Despidiéndose`, signal);
+    if (director) await agentSpeak(director, currentHistory, onMessage, onStatus, `J.A.R.V.I.S. se despide`, signal);
     return; 
   }
 
+  // 2. ¿El usuario llamó a alguien específico? Habla solo ese.
   const requestedId = detectRequestedAgent(lastUserMsg);
   if (requestedId) {
     const targetAgent = agents.find(a => a.id === requestedId);
     if (targetAgent) {
       onStatus(`Llamando a ${targetAgent.name}...`);
-      await agentSpeak(targetAgent, currentHistory, onMessage, onStatus, `Respondiendo al usuario`, signal);
+      await agentSpeak(targetAgent, currentHistory, onMessage, onStatus, `${targetAgent.name} responde`, signal);
       return; 
     }
   }
 
-  // RONDA DE DEBATE EN GRUPO
-  const analista = agents.find(a => a.id === 'analista');
-  const critico = agents.find(a => a.id === 'critico');
-  const estratega = agents.find(a => a.id === 'estratega');
+  // 3. DEBATE CONTINUO (El flujo principal)
+  // Definimos el orden de la mesa redonda
+  const order = ['director', 'analista', 'critico', 'estratega'];
+  let startIndex = 0;
 
-  for (let ronda = 1; ronda <= maxRounds; ronda++) {
-    if (director && ronda === 1) {
-      const res = await agentSpeak(director, currentHistory, onMessage, onStatus, `J.A.R.V.I.S. modera la sala...`, signal);
-      if (res.aborted) return;
+  // Buscamos quién fue el último agente que habló para saber a quién le toca
+  const lastAssistant = [...history].reverse().find(m => m.role === 'assistant');
+  
+  if (lastAssistant) {
+    const lastIdx = order.indexOf(lastAssistant.agentId);
+    if (lastIdx !== -1) {
+      startIndex = (lastIdx + 1) % order.length;
+      // Si el siguiente es el director, lo saltamos para que no reinicie la sesión.
+      // Preferimos que el debate siga fluyendo entre los analistas y estrategas.
+      if (order[startIndex] === 'director') startIndex = 1; 
     }
-    if (analista) {
-      const res = await agentSpeak(analista, currentHistory, onMessage, onStatus, `F.R.I.D.A.Y. expone...`, signal);
-      if (res.aborted) return;
-    }
-    if (critico) {
-      const res = await agentSpeak(critico, currentHistory, onMessage, onStatus, `ULTRON ataca los argumentos...`, signal);
-      if (res.aborted) return;
-    }
-    // Hacemos que F.R.I.D.A.Y. o E.D.I.T.H. puedan responderle a ULTRON
-    if (estratega) {
-      const res = await agentSpeak(estratega, currentHistory, onMessage, onStatus, `E.D.I.T.H. propone un plan...`, signal);
+  }
+
+  // El debate se ejecuta durante la cantidad de turnos configurada (Ciclos)
+  for (let i = 0; i < maxRounds; i++) {
+    if (signal?.aborted) return;
+
+    const currentAgentId = order[(startIndex + i) % order.length];
+    const currentAgent = agents.find(a => a.id === currentAgentId);
+
+    if (currentAgent) {
+      const res = await agentSpeak(
+        currentAgent, 
+        currentHistory, 
+        onMessage, 
+        onStatus, 
+        `${currentAgent.name} interviene...`, 
+        signal
+      );
+      
       if (res.aborted) return;
     }
   }
-  onStatus('Sesión finalizada.');
+  
+  onStatus('Sesión en pausa. Esperando tu intervención.');
 }
 
 export async function runDirected({ agentId, userText, history, onMessage }) {
