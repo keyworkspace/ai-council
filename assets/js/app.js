@@ -9,6 +9,7 @@ const state = {
   history: [],            
   abortController: null,
   isRunning: false,
+  attachedFile: null, // 🚨 AQUÍ GUARDAMOS EL ARCHIVO
 };
 
 const $ = (sel) => document.querySelector(sel);
@@ -28,6 +29,11 @@ const dialogRoom = $('#dialog-room');
 const sidebarEl = $('#sidebar');
 const btnScrollBottom = $('#btn-scroll-bottom');
 
+// 🚨 REFERENCIAS A LOS ELEMENTOS DEL ARCHIVO 🚨
+const fileInput = $('#file-input');
+const filePreview = $('#file-preview');
+const fileNameDisplay = $('#file-name-display');
+
 let activeStreamingEl = null;
 let activeStreamingAgent = null;
 
@@ -38,7 +44,6 @@ async function init() {
   try { await checkHealth(); } catch (e) { console.error(e); }
 }
 
-// 🚨 RENDERIZADO DINÁMICO DE AGENTES (Muestra si están ON u OFF) 🚨
 function renderAgentList() {
   agentListEl.innerHTML = '';
   const currentRoom = state.rooms.find(r => r.id === state.currentRoomId);
@@ -50,8 +55,6 @@ function renderAgentList() {
     li.className = isActive ? 'agent-on' : 'agent-off';
     li.style.cursor = 'pointer';
     li.title = isActive ? 'Desactivar agente' : 'Activar agente';
-    
-    // Evitar que el usuario apague a todos los agentes
     li.onclick = () => toggleAgent(a.id);
 
     li.innerHTML = `
@@ -68,22 +71,16 @@ function renderAgentList() {
 }
 
 async function toggleAgent(agentId) {
-  if (!state.currentRoomId) {
-    alert('Primero selecciona o crea una sala.');
-    return;
-  }
+  if (!state.currentRoomId) { alert('Primero selecciona o crea una sala.'); return; }
   const room = state.rooms.find(r => r.id === state.currentRoomId);
   if (!room) return;
 
   const index = room.agentIds.indexOf(agentId);
   if (index > -1) {
-    if (room.agentIds.length <= 1) {
-      alert('Debe haber al menos un agente activo en la sala.');
-      return;
-    }
-    room.agentIds.splice(index, 1); // Apagar
+    if (room.agentIds.length <= 1) { alert('Debe haber al menos un agente activo.'); return; }
+    room.agentIds.splice(index, 1); 
   } else {
-    room.agentIds.push(agentId); // Encender
+    room.agentIds.push(agentId); 
   }
 
   await saveRoom(room);
@@ -124,7 +121,7 @@ async function selectRoom(id) {
   updateAgentSelect(room.agentIds);
   renderMessages();
   renderRoomList();
-  renderAgentList(); // Actualizamos el estado ON/OFF al cambiar de sala
+  renderAgentList();
 }
 
 function updateAgentSelect(agentIds) {
@@ -143,7 +140,7 @@ function updateAgentSelect(agentIds) {
 function renderMessages() {
   messagesEl.innerHTML = '';
   if (!state.history.length) {
-    messagesEl.innerHTML = `<div class="empty-state"><div class="empty-icon">🛸</div><h3>Sistemas en espera</h3><p>Envía un comunicado para iniciar la deliberación.</p></div>`;
+    messagesEl.innerHTML = `<div class="empty-state"><div class="empty-icon">🛸</div><h3>Sistemas en espera</h3><p>Envía un comunicado o adjunta un archivo para iniciar la deliberación.</p></div>`;
     return;
   }
   state.history.forEach(m => appendMessage(m, false));
@@ -156,7 +153,6 @@ function isUserAtBottom() {
   return messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < threshold;
 }
 
-// 🚨 BURBUJA DE STREAMING (Letra por letra)
 function createStreamingBubble(agentName, avatar) {
   const div = document.createElement('div');
   div.className = `msg agent thinking`;
@@ -215,6 +211,37 @@ function bindEvents() {
   
   btnScrollBottom.onclick = () => { messagesEl.scrollTo({ top: messagesEl.scrollHeight, behavior: 'smooth' }); };
 
+  // 🚨 EVENTOS PARA CARGAR ARCHIVOS 🚨
+  $('#btn-attach').onclick = () => fileInput.click();
+
+  fileInput.onchange = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    if (file.size > 500000) { // 500 KB máximo para no romper la API
+      alert('El archivo es demasiado grande (máximo 500KB).');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      state.attachedFile = {
+        name: file.name,
+        content: event.target.result
+      };
+      fileNameDisplay.textContent = `📄 ${file.name}`;
+      filePreview.classList.remove('hidden');
+    };
+    reader.readAsText(file);
+  };
+
+  $('#btn-remove-file').onclick = () => {
+    state.attachedFile = null;
+    fileInput.value = '';
+    filePreview.classList.add('hidden');
+  };
+
+  // Crear Sala
   $('#btn-new-room').onclick = () => {
     try {
       if (typeof dialogRoom.showModal === 'function') {
@@ -331,8 +358,10 @@ function setRunning(running) {
 }
 
 async function handleSend() {
-  const text = userInput.value.trim();
-  if (!text) return;
+  let text = userInput.value.trim();
+  
+  // 🚨 VALIDACIÓN: Debe haber texto O un archivo 🚨
+  if (!text && !state.attachedFile) return;
 
   if (state.isRunning && state.abortController) {
     state.abortController.abort();
@@ -342,7 +371,7 @@ async function handleSend() {
   }
 
   if (!state.currentRoomId) {
-    const autoName = text.length > 30 ? text.substring(0, 30) + '...' : text;
+    const autoName = text ? (text.length > 30 ? text.substring(0, 30) + '...' : text) : state.attachedFile.name;
     const newRoom = {
       id: crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(),
       name: autoName, topic: '', agentIds: getActiveAgents().map(a => a.id),
@@ -361,12 +390,32 @@ async function handleSend() {
     renderAgentList();
   }
 
+  // 🚨 PREPARACIÓN DEL MENSAJE CON ARCHIVO 🚨
+  let finalMessageText = text;
+  if (state.attachedFile) {
+    const fileBlock = `\n\n[ARCHIVO ADJUNTO: ${state.attachedFile.name}]\n\`\`\`\n${state.attachedFile.content}\n\`\`\`\n\n`;
+    finalMessageText = text ? `${text}${fileBlock}` : `Analiza el siguiente archivo:\n${fileBlock}`;
+    
+    // Limpiamos el archivo para que no se envíe dos veces
+    state.attachedFile = null;
+    fileInput.value = '';
+    filePreview.classList.add('hidden');
+  }
+
   const room = state.rooms.find(r => r.id === state.currentRoomId);
   if (!room) return;
 
-  const userMsg = { role: 'user', agentName: 'Usuario', text };
+  const userMsg = { role: 'user', agentName: 'Usuario', text: finalMessageText };
   state.history.push(userMsg);
-  appendMessage({ agentName: 'Usuario', text, role: 'user' });
+  
+  // Mostramos en el chat un resumen si hay archivo
+  if (finalMessageText.includes('[ARCHIVO ADJUNTO:')) {
+    const displayText = text ? `${text}\n\n*(Archivo adjunto: ${userMsg.text.match(/\[ARCHIVO ADJUNTO: (.*?)\]/)[1]})*` : `*(Archivo adjunto enviado al consejo)*`;
+    appendMessage({ agentName: 'Usuario', text: displayText, role: 'user' });
+  } else {
+    appendMessage({ agentName: 'Usuario', text: finalMessageText, role: 'user' });
+  }
+  
   userInput.value = '';
 
   setRunning(true);
@@ -403,14 +452,14 @@ async function handleSend() {
       if (!agentId) { alert('Selecciona un agente.'); setRunning(false); return; }
       
       await runDirected({
-        agentId, userText: text, history: state.history.slice(0, -1),
+        agentId, userText: finalMessageText, history: state.history.slice(0, -1),
         onMessage, onChunk,
-        selectedAgentIds: room.agentIds // 🚨 Pasamos los agentes presentes en la sala
+        selectedAgentIds: room.agentIds
       });
     } else {
       await runAutonomous({
         history: state.history,
-        selectedAgentIds: room.agentIds, // 🚨 Pasamos los agentes presentes en la sala
+        selectedAgentIds: room.agentIds,
         maxRounds: Number(maxRoundsInput.value) || 3,
         onMessage, onChunk,
         onStatus: (s) => { roomStatusEl.textContent = s; },
