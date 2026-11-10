@@ -17,6 +17,17 @@ function buildMessages(agent, history) {
   return [sys, ...dialogue];
 }
 
+// 🚨 DETECTOR DE NOMBRES EN EL MENSAJE 🚨
+function detectRequestedAgent(text) {
+  if (!text) return null;
+  const lower = text.toLowerCase();
+  if (lower.includes('ultron')) return 'critico';
+  if (lower.includes('friday') || lower.includes('f.r.i.d.a.y')) return 'analista';
+  if (lower.includes('edith') || lower.includes('e.d.i.t.h')) return 'estratega';
+  if (lower.includes('jarvis') || lower.includes('j.a.r.v.i.s')) return 'director';
+  return null;
+}
+
 async function agentSpeak(agent, currentHistory, onMessage, onStatus, statusMsg, signal) {
   if (signal?.aborted) return { text: '', needsUser: false, aborted: true };
   onStatus(statusMsg);
@@ -32,7 +43,6 @@ async function agentSpeak(agent, currentHistory, onMessage, onStatus, statusMsg,
     let cleanText = text;
     let needsUser = false;
 
-    // Limpiador de alucinaciones
     cleanText = cleanText.replace(/\[DRAFT SECRETO[\s\S]*?-----+/gi, '');
     cleanText = cleanText.replace(/\[DRAFT[\s\S]*?-----+/gi, '');
     cleanText = cleanText.replace(/\[ESTRATEGA\]:\s*/gi, '');
@@ -60,7 +70,22 @@ export async function runAutonomous({ history, selectedAgentIds, maxRounds, onMe
   if (!agents.length) throw new Error('No hay agentes activos.');
 
   let currentHistory = [...history];
+
+  // 🚨 INTERCEPTOR: Si el usuario nombra a un agente, habla ese directamente.
+  const lastUserMsg = history[history.length - 1]?.text || '';
+  const requestedId = detectRequestedAgent(lastUserMsg);
   
+  if (requestedId) {
+    const targetAgent = agents.find(a => a.id === requestedId);
+    if (targetAgent) {
+      onStatus(`Llamando a ${targetAgent.name}...`);
+      const res = await agentSpeak(targetAgent, currentHistory, onMessage, onStatus, `El usuario solicita a ${targetAgent.name}`, signal);
+      // Devolvemos el control para que el usuario lea la respuesta del agente solicitado
+      return; 
+    }
+  }
+
+  // Si no hay un agente específico, sigue el flujo normal
   const director = agents.find(a => a.id === 'director');
   const analista = agents.find(a => a.id === 'analista');
   const critico = agents.find(a => a.id === 'critico');
