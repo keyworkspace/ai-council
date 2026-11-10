@@ -9,9 +9,10 @@ function buildMessages(agent, history) {
     contextToSend = [history[0], ...history.slice(-9)];
   }
 
+  // 🚨 NUEVO FORMATO: Sin corchetes, para que la IA no copie las etiquetas
   const dialogue = contextToSend.map(m => ({
     role: m.role === 'user' ? 'user' : 'assistant',
-    content: `[${m.agentName || 'Usuario'}]: ${m.text}`,
+    content: `${m.agentName || 'Usuario'} dijo: ${m.text}`,
   }));
   
   return [sys, ...dialogue];
@@ -43,11 +44,14 @@ async function agentSpeak(agent, currentHistory, onMessage, onStatus, statusMsg,
     let cleanText = text;
     let needsUser = false;
 
+    // 🚨 LIMPIADOR DE FUGAS DE ROL Y ALUCINACIONES 🚨
+    // Esto borra CUALQUIER etiqueta tipo [F.R.I.D.A.Y.]: o [J.A.R.V.I.S.]: al principio del texto
+    cleanText = cleanText.replace(/^\[[^\]]+\]:\s*/gi, '');
+    cleanText = cleanText.replace(/^[A-Z\.\s\-]{3,}:\s*/gi, ''); // Borra "F.R.I.D.A.Y.: " si no tiene corchetes
+    
+    // Limpieza de borradores
     cleanText = cleanText.replace(/\[DRAFT SECRETO[\s\S]*?-----+/gi, '');
     cleanText = cleanText.replace(/\[DRAFT[\s\S]*?-----+/gi, '');
-    cleanText = cleanText.replace(/\[ESTRATEGA\]:\s*/gi, '');
-    cleanText = cleanText.replace(/\[ANALISTA\]:\s*/gi, '');
-    cleanText = cleanText.replace(/\[CRÍTICO\]:\s*/gi, '');
 
     if (cleanText.includes('[PAUSA_USUARIO]')) {
       needsUser = true;
@@ -71,7 +75,6 @@ export async function runAutonomous({ history, selectedAgentIds, maxRounds, onMe
 
   let currentHistory = [...history];
 
-  // 🚨 INTERCEPTOR: Si el usuario nombra a un agente, habla ese directamente.
   const lastUserMsg = history[history.length - 1]?.text || '';
   const requestedId = detectRequestedAgent(lastUserMsg);
   
@@ -80,12 +83,10 @@ export async function runAutonomous({ history, selectedAgentIds, maxRounds, onMe
     if (targetAgent) {
       onStatus(`Llamando a ${targetAgent.name}...`);
       const res = await agentSpeak(targetAgent, currentHistory, onMessage, onStatus, `El usuario solicita a ${targetAgent.name}`, signal);
-      // Devolvemos el control para que el usuario lea la respuesta del agente solicitado
       return; 
     }
   }
 
-  // Si no hay un agente específico, sigue el flujo normal
   const director = agents.find(a => a.id === 'director');
   const analista = agents.find(a => a.id === 'analista');
   const critico = agents.find(a => a.id === 'critico');
@@ -135,7 +136,7 @@ export async function runDirected({ agentId, userText, history, onMessage }) {
     messages: buildMessages(agent, enrichedHistory), temperature: agent.temperature,
   });
   
-  const cleanText = text.replace('[PAUSA_USUARIO]', '').trim();
+  let cleanText = text.replace(/^\[[^\]]+\]:\s*/gi, '').replace('[PAUSA_USUARIO]', '').trim();
   onMessage({ agentId: agent.id, agentName: agent.name, avatar: agent.avatar, text: cleanText });
   return cleanText;
 }
