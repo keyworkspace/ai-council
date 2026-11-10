@@ -11,6 +11,9 @@ const FALLBACK_MODELS = {
   gemini: ['gemini-3.8-flash', 'gemini-3.6-flash']
 };
 
+// 🚨 FUNCIÓN PARA ESPERAR (Evita el bloqueo de Groq) 🚨
+const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
 export default async function handler(req) {
   if (req.method === 'OPTIONS') {
     return new Response(null, { status: 204, headers: CORS_HEADERS });
@@ -34,37 +37,47 @@ export default async function handler(req) {
 
       let resultText = '';
       
-      // 🚨 INTENTO CON GROQ (Con Timeout de 10s) 🚨
       if (provider === 'groq') {
         const apiKey = process.env.GROQ_API_KEY;
         if (apiKey) {
           for (const currentModel of FALLBACK_MODELS.groq) {
-            try {
-              const groqController = new AbortController();
-              const timeout = setTimeout(() => groqController.abort(), 10000); // 10s máximo para Groq
+            let attempts = 0;
+            while (attempts < 2) { // Hasta 2 reintentos si se satura
+              try {
+                const groqController = new AbortController();
+                const timeout = setTimeout(() => groqController.abort(), 10000);
 
-              const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-                body: JSON.stringify({ model: currentModel, messages: safeMessages, temperature, max_tokens: 4096, stream: true }),
-                signal: groqController.signal
-              });
-              clearTimeout(timeout);
-
-              if (res.ok) {
-                return new Response(res.body, {
-                  status: 200,
-                  headers: { ...CORS_HEADERS, 'Content-Type': 'text/event-stream' }
+                const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+                  body: JSON.stringify({ model: currentModel, messages: safeMessages, temperature, max_tokens: 4096, stream: true }),
+                  signal: groqController.signal
                 });
+                clearTimeout(timeout);
+
+                if (res.ok) {
+                  return new Response(res.body, {
+                    status: 200,
+                    headers: { ...CORS_HEADERS, 'Content-Type': 'text/event-stream' }
+                  });
+                } else if (res.status === 429) {
+                  // 🚨 Si Groq dice "Too Many Requests", esperamos 1.5s y reintentamos 🚨
+                  console.warn(`Groq Rate Limit. Reintentando en 1.5s...`);
+                  await sleep(1500);
+                  attempts++;
+                } else {
+                  break; // Si es otro error, pasamos al respaldo de Gemini
+                }
+              } catch (e) {
+                console.warn(`Fallo en Groq (${currentModel}): ${e.message}`);
+                break; 
               }
-            } catch (e) {
-              console.warn(`Fallo en Groq (${currentModel}): ${e.message}`);
             }
           }
         }
       }
 
-      // 🚨 RESPALDO CON GEMINI (Siempre JSON) 🚨
+      // ── RESPALDO CON GEMINI ──
       const geminiKey = process.env.GEMINI_API_KEY;
       if (geminiKey) {
         for (const currentModel of FALLBACK_MODELS.gemini) {
