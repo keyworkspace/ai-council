@@ -18,19 +18,15 @@ function buildMessages(agent, history, activeAgentIds) {
 
   const sys = { role: 'system', content: sysContent };
   
-  // 🚨 MEMORIA A LARGO PLAZO (Últimos 25 mensajes) 🚨
   let contextToSend = history;
   if (history.length > 25) {
     contextToSend = history.slice(-25);
   }
 
-  // 🚨 FORMATO DE TRANSCRIPCIÓN CLARO (Sin corchetes) 🚨
   const dialogue = contextToSend.map(m => {
     const safeText = sanitizeText(m.text);
     const speaker = m.role === 'user' ? 'Usuario' : m.agentName;
     
-    // Usamos el rol 'assistant' para las IAs y 'user' para el humano.
-    // El nombre va en el texto para que sepan quién es quién.
     return {
       role: m.role === 'user' ? 'user' : 'assistant',
       content: `${speaker}: ${safeText}`,
@@ -86,7 +82,8 @@ async function agentSpeak(agent, currentHistory, activeAgentIds, onMessage, onSt
     return { text: cleanText, aborted: false };
   } catch (err) {
     if (signal?.aborted || err.name === 'AbortError') return { text: '', aborted: true };
-    onMessage({ agentId: agent.id, agentName: agent.name, avatar: agent.avatar, text: `⚠️ *Servidor de IA saturado.*` });
+    // 🚨 MUESTRA EL ERROR REAL EN EL CHAT 🚨
+    onMessage({ agentId: agent.id, agentName: agent.name, avatar: agent.avatar, text: `⚠️ *${err.message}*` });
     return { text: '', aborted: false };
   }
 }
