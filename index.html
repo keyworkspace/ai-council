@@ -1,135 +1,21 @@
-<!DOCTYPE html>
-<html lang="es">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-  <title>Key Industries · AI Council</title>
-  
-  <!-- 🚨 CONFIGURACIÓN PWA 🚨 -->
-  <link rel="manifest" href="manifest.json">
-  <meta name="theme-color" content="#050505">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
-  
-  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-  <script>
-    // Cache buster automático
-    const autoVersion = new Date().getTime();
-    const link = document.createElement('link');
-    link.rel = 'stylesheet';
-    link.href = 'assets/css/styles.css?v=' + autoVersion;
-    document.head.appendChild(link);
-    const script = document.createElement('script');
-    script.type = 'module';
-    script.src = 'assets/js/app.js?v=' + autoVersion;
-    document.head.appendChild(script);
-
-    // 🚨 REGISTRO DEL SERVICE WORKER 🚨
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker.register('sw.js').then(reg => {
-          console.log('Service Worker registrado con éxito:', reg.scope);
-        }).catch(err => {
-          console.log('Fallo al registrar el Service Worker:', err);
-        });
-      });
-    }
-  </script>
-</head>
-<body>
-  <div id="app">
-    <!-- Panel lateral -->
-    <aside class="sidebar" id="sidebar">
-      <div class="logo-container">
-        <div class="logo-icon">⚡</div>
-        <div>
-          <h1>KEY INDUSTRIES</h1>
-          <span class="subtitle">Deliberación Multiagente</span>
-        </div>
-      </div>
-      
-      <button id="btn-new-room" class="btn-primary">
-        <span class="icon">+</span> Nueva Sesión
-      </button>
-      
-      <div class="section-title">Salas Activas</div>
-      <ul id="room-list" class="room-list"></ul>
-      
-      <div class="section-title">Personal Asignado</div>
-      <ul id="agent-list" class="agent-list"></ul>
-    </aside>
-
-    <!-- Área principal -->
-    <main class="main">
-      <header class="room-header">
-        <div class="header-info">
-          <div class="title-wrapper">
-            <button id="btn-toggle-sidebar" class="btn-icon-mini" title="Ocultar menú" style="font-size: 1.2rem; margin-right: 5px;">☰</button>
-            <h2 id="room-name">Selecciona o crea una sesión</h2>
-            <button id="btn-edit-room-name" class="btn-icon-mini" title="Renombrar sala">✏️</button>
-          </div>
-          <p id="room-topic" class="topic">·</p>
-        </div>
-        <div class="room-actions">
-          <span id="room-status" class="badge">En espera</span>
-          <button id="btn-export" class="btn-icon" title="Exportar">⬇</button>
-          <button id="btn-delete-room" class="btn-icon danger" title="Eliminar">🗑</button>
-        </div>
-      </header>
-
-      <div id="messages" class="messages" aria-live="polite">
-        <div class="empty-state">
-          <div class="empty-icon">🛸</div>
-          <h3>Sistemas en espera</h3>
-          <p>Envía un comunicado para iniciar la deliberación de las IAs.</p>
-        </div>
-      </div>
-
-      <button id="btn-scroll-bottom" class="btn-scroll-bottom hidden" title="Ir al último mensaje">⬇</button>
-
-      <div class="composer">
-        <div class="composer-controls">
-          <select id="mode-select" class="tech-select">
-            <option value="autonomous">Modo Autónomo</option>
-            <option value="directed">Modo Dirigido</option>
-          </select>
-          <select id="agent-select" class="tech-select" disabled>
-            <option value="">· Agente ·</option>
-          </select>
-          <div class="rounds-input">
-            <label>Ciclos</label>
-            <input type="number" id="max-rounds" value="3" min="1" max="10">
-          </div>
-          <button id="btn-stop" class="btn-icon danger" disabled title="Detener">⏹</button>
-        </div>
-        
         <div class="composer-input-wrapper">
           <textarea id="user-input" rows="1" placeholder="Escribe un comunicado para el consejo..."></textarea>
+          
+          <!-- 🚨 INPUT DE ARCHIVO OCULTO 🚨 -->
+          <input type="file" id="file-input" accept=".html,.css,.js,.json,.txt,.md" style="display: none;">
+          
+          <!-- 🚨 BOTÓN DE ADJUNTAR 🚨 -->
+          <button id="btn-attach" class="btn-icon" title="Adjuntar archivo (HTML, CSS, TXT)" style="background: transparent; border: none; font-size: 1.2rem; width: 40px; height: 40px;">
+            📎
+          </button>
+
           <button id="btn-send" class="btn-send">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
           </button>
         </div>
-      </div>
-    </main>
-  </div>
-
-  <!-- Modal de nueva sala -->
-  <dialog id="dialog-room" class="tech-dialog">
-    <form method="dialog" id="form-room">
-      <h3>Inicializar Nueva Sesión</h3>
-      <label>Identificador de la Sala <input type="text" id="input-room-name" required maxlength="80" placeholder="Ej. Análisis de Proyecto"></label>
-      <label>Seleccionar Agentes
-        <div id="agent-checkboxes" class="checkbox-grid"></div>
-      </label>
-      <menu>
-        <button type="button" id="btn-cancel-room" class="btn-ghost">Cancelar</button>
-        <button type="submit" class="btn-primary">Iniciar</button>
-      </menu>
-    </form>
-  </dialog>
-</body>
-</html>
+        
+        <!-- 🚨 VISTA PREVIA DEL ARCHIVO ADJUNTO 🚨 -->
+        <div id="file-preview" class="file-preview hidden">
+          <span id="file-name-display">archivo.html</span>
+          <button id="btn-remove-file" class="btn-remove-file" title="Quitar archivo">✖</button>
+        </div>
