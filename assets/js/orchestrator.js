@@ -1,6 +1,16 @@
 import { chat } from './api.js';
 import { getAgentById } from './agents.js';
 
+// 🚨 FUNCIÓN PARA LIMPIAR EL TEXTO DE ETIQUETAS 🚨
+function sanitizeText(text) {
+  if (!text) return '';
+  // Borra [CualquierCosa]: al inicio
+  let clean = text.replace(/^\[[^\]]+\]:\s*/gi, '');
+  // Borra "Nombre:" al inicio
+  clean = clean.replace(/^[A-Z\.\s\-]{3,}:\s*/gi, '');
+  return clean.trim();
+}
+
 function buildMessages(agent, history) {
   const sys = { role: 'system', content: agent.systemPrompt };
   
@@ -9,16 +19,18 @@ function buildMessages(agent, history) {
     contextToSend = [history[0], ...history.slice(-9)];
   }
 
-  // 🚨 NUEVO FORMATO: Sin corchetes, para que la IA no copie las etiquetas
-  const dialogue = contextToSend.map(m => ({
-    role: m.role === 'user' ? 'user' : 'assistant',
-    content: `${m.agentName || 'Usuario'} dijo: ${m.text}`,
-  }));
+  // 🚨 HISTORIAL TOTALMENTE LIMPIO 🚨
+  const dialogue = contextToSend.map(m => {
+    const safeText = sanitizeText(m.text);
+    return {
+      role: m.role === 'user' ? 'user' : 'assistant',
+      content: `${m.agentName || 'Usuario'} dijo: ${safeText}`,
+    };
+  });
   
   return [sys, ...dialogue];
 }
 
-// 🚨 DETECTOR DE NOMBRES EN EL MENSAJE 🚨
 function detectRequestedAgent(text) {
   if (!text) return null;
   const lower = text.toLowerCase();
@@ -27,6 +39,14 @@ function detectRequestedAgent(text) {
   if (lower.includes('edith') || lower.includes('e.d.i.t.h')) return 'estratega';
   if (lower.includes('jarvis') || lower.includes('j.a.r.v.i.s')) return 'director';
   return null;
+}
+
+// 🚨 DETECTOR DE DESPEDIDAS 🚨
+function isFarewell(text) {
+  if (!text) return false;
+  const lower = text.toLowerCase();
+  const words = ['adios', 'adiós', 'nos vemos', 'hasta luego', 'buenas noches', 'me voy', 'hasta mañana', 'suerte', 'chao'];
+  return words.some(w => lower.includes(w));
 }
 
 async function agentSpeak(agent, currentHistory, onMessage, onStatus, statusMsg, signal) {
@@ -41,14 +61,9 @@ async function agentSpeak(agent, currentHistory, onMessage, onStatus, statusMsg,
     
     if (signal?.aborted) return { text: '', needsUser: false, aborted: true };
 
-    let cleanText = text;
+    let cleanText = sanitizeText(text);
     let needsUser = false;
 
-    // 🚨 LIMPIADOR DE FUGAS DE ROL Y ALUCINACIONES 🚨
-    // Esto borra CUALQUIER etiqueta tipo [F.R.I.D.A.Y.]: o [J.A.R.V.I.S.]: al principio del texto
-    cleanText = cleanText.replace(/^\[[^\]]+\]:\s*/gi, '');
-    cleanText = cleanText.replace(/^[A-Z\.\s\-]{3,}:\s*/gi, ''); // Borra "F.R.I.D.A.Y.: " si no tiene corchetes
-    
     // Limpieza de borradores
     cleanText = cleanText.replace(/\[DRAFT SECRETO[\s\S]*?-----+/gi, '');
     cleanText = cleanText.replace(/\[DRAFT[\s\S]*?-----+/gi, '');
@@ -75,6 +90,7 @@ export async function runAutonomous({ history, selectedAgentIds, maxRounds, onMe
 
   let currentHistory = [...history];
 
+  // 1. Interceptor de agente específico
   const lastUserMsg = history[history.length - 1]?.text || '';
   const requestedId = detectRequestedAgent(lastUserMsg);
   
@@ -82,7 +98,7 @@ export async function runAutonomous({ history, selectedAgentIds, maxRounds, onMe
     const targetAgent = agents.find(a => a.id === requestedId);
     if (targetAgent) {
       onStatus(`Llamando a ${targetAgent.name}...`);
-      const res = await agentSpeak(targetAgent, currentHistory, onMessage, onStatus, `El usuario solicita a ${targetAgent.name}`, signal);
+      await agentSpeak(targetAgent, currentHistory, onMessage, onStatus, `El usuario solicita a ${targetAgent.name}`, signal);
       return; 
     }
   }
@@ -93,6 +109,16 @@ export async function runAutonomous({ history, selectedAgentIds, maxRounds, onMe
   const estratega = agents.find(a => a.id === 'estratega');
   const asesor = agents.find(a => a.id === 'asesor') || agents.find(a => a.id === 'director');
 
+  // 2. 🚨 INTERCEPTOR DE DESPEDIDA 🚨
+  if (isFarewell(lastUserMsg)) {
+    if (director) {
+      onStatus(`Despidiéndose...`);
+      await agentSpeak(director, currentHistory, onMessage, onStatus, `J.A.R.V.I.S. se despide`, signal);
+    }
+    return; // Detenemos el bucle, no hay debate si el usuario se va.
+  }
+
+  // 3. Bucle normal
   for (let ronda = 1; ronda <= maxRounds; ronda++) {
     if (director) {
       const res = await agentSpeak(director, currentHistory, onMessage, onStatus, `Ronda ${ronda} · J.A.R.V.I.S. modera...`, signal);
@@ -136,7 +162,7 @@ export async function runDirected({ agentId, userText, history, onMessage }) {
     messages: buildMessages(agent, enrichedHistory), temperature: agent.temperature,
   });
   
-  let cleanText = text.replace(/^\[[^\]]+\]:\s*/gi, '').replace('[PAUSA_USUARIO]', '').trim();
+  const cleanText = sanitizeText(text).replace('[PAUSA_USUARIO]', '').trim();
   onMessage({ agentId: agent.id, agentName: agent.name, avatar: agent.avatar, text: cleanText });
   return cleanText;
 }
