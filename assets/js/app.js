@@ -28,7 +28,6 @@ const dialogRoom = $('#dialog-room');
 const sidebarEl = $('#sidebar');
 const btnScrollBottom = $('#btn-scroll-bottom');
 
-// Variables para el streaming
 let activeStreamingEl = null;
 let activeStreamingAgent = null;
 
@@ -39,19 +38,57 @@ async function init() {
   try { await checkHealth(); } catch (e) { console.error(e); }
 }
 
+// 🚨 RENDERIZADO DINÁMICO DE AGENTES (Muestra si están ON u OFF) 🚨
 function renderAgentList() {
   agentListEl.innerHTML = '';
+  const currentRoom = state.rooms.find(r => r.id === state.currentRoomId);
+  const activeIds = currentRoom ? currentRoom.agentIds : AGENTS.map(a => a.id);
+
   AGENTS.forEach(a => {
+    const isActive = activeIds.includes(a.id);
     const li = document.createElement('li');
+    li.className = isActive ? 'agent-on' : 'agent-off';
+    li.style.cursor = 'pointer';
+    li.title = isActive ? 'Desactivar agente' : 'Activar agente';
+    
+    // Evitar que el usuario apague a todos los agentes
+    li.onclick = () => toggleAgent(a.id);
+
     li.innerHTML = `
       <span style="display:flex;align-items:center;gap:0.4rem">
-        <span class="agent-dot ${a.active ? '' : 'off'}"></span>
+        <span class="agent-dot ${isActive ? '' : 'off'}"></span>
         <span>${a.avatar} ${a.name}</span>
       </span>
-      <small style="color:var(--text-muted);font-size:0.65rem">${a.provider}</small>
+      <small style="color:${isActive ? 'var(--accent-cyan)' : 'var(--text-muted)'}; font-weight:${isActive ? 'bold' : 'normal'};">
+        ${isActive ? 'ON' : 'OFF'}
+      </small>
     `;
     agentListEl.appendChild(li);
   });
+}
+
+async function toggleAgent(agentId) {
+  if (!state.currentRoomId) {
+    alert('Primero selecciona o crea una sala.');
+    return;
+  }
+  const room = state.rooms.find(r => r.id === state.currentRoomId);
+  if (!room) return;
+
+  const index = room.agentIds.indexOf(agentId);
+  if (index > -1) {
+    if (room.agentIds.length <= 1) {
+      alert('Debe haber al menos un agente activo en la sala.');
+      return;
+    }
+    room.agentIds.splice(index, 1); // Apagar
+  } else {
+    room.agentIds.push(agentId); // Encender
+  }
+
+  await saveRoom(room);
+  renderAgentList();
+  updateAgentSelect(room.agentIds);
 }
 
 async function loadRooms() {
@@ -83,9 +120,11 @@ async function selectRoom(id) {
   roomStatusEl.classList.toggle('active', room.status === 'Activa');
   maxRoundsInput.value = room.maxRounds || 3;
   modeSelect.value = room.mode || 'autonomous';
-  updateAgentSelect(room.agentIds || getActiveAgents().map(a => a.id));
+  
+  updateAgentSelect(room.agentIds);
   renderMessages();
   renderRoomList();
+  renderAgentList(); // Actualizamos el estado ON/OFF al cambiar de sala
 }
 
 function updateAgentSelect(agentIds) {
@@ -117,11 +156,10 @@ function isUserAtBottom() {
   return messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < threshold;
 }
 
-// 🚨 NUEVA FUNCIÓN: Crea la burbuja vacía para el streaming
+// 🚨 BURBUJA DE STREAMING (Letra por letra)
 function createStreamingBubble(agentName, avatar) {
   const div = document.createElement('div');
   div.className = `msg agent thinking`;
-  
   div.innerHTML = `
     <div class="msg-avatar">${avatar || '🤖'}</div>
     <div class="msg-body">
@@ -130,7 +168,6 @@ function createStreamingBubble(agentName, avatar) {
     </div>
   `;
   messagesEl.appendChild(div);
-  
   if (isUserAtBottom()) messagesEl.scrollTop = messagesEl.scrollHeight;
   return div;
 }
@@ -170,10 +207,12 @@ async function persistCurrentRoom() {
 
 function bindEvents() {
   $('#btn-toggle-sidebar').onclick = () => { sidebarEl.classList.toggle('collapsed'); };
+  
   messagesEl.onscroll = () => {
     if (isUserAtBottom()) btnScrollBottom.classList.add('hidden');
     else btnScrollBottom.classList.remove('hidden');
   };
+  
   btnScrollBottom.onclick = () => { messagesEl.scrollTo({ top: messagesEl.scrollHeight, behavior: 'smooth' }); };
 
   $('#btn-new-room').onclick = () => {
@@ -190,6 +229,7 @@ function bindEvents() {
   };
 
   $('#btn-cancel-room').onclick = () => { if (dialogRoom.close) dialogRoom.close(); };
+  
   $('#form-room').onsubmit = async (e) => {
     e.preventDefault();
     const name = $('#input-room-name').value.trim();
@@ -255,13 +295,9 @@ function bindEvents() {
 async function createManualRoom(name, agentIds = null) {
   const newRoom = {
     id: crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(),
-    name: name,
-    topic: '',
+    name: name, topic: '',
     agentIds: agentIds || getActiveAgents().map(a => a.id),
-    mode: 'autonomous',
-    maxRounds: 3,
-    history: [],
-    status: 'En espera',
+    mode: 'autonomous', maxRounds: 3, history: [], status: 'En espera',
     createdAt: new Date().toISOString(),
   };
   try { await saveRoom(newRoom); } catch(e) {}
@@ -322,6 +358,7 @@ async function handleSend() {
     updateAgentSelect(newRoom.agentIds);
     renderMessages();
     renderRoomList();
+    renderAgentList();
   }
 
   const room = state.rooms.find(r => r.id === state.currentRoomId);
@@ -336,7 +373,6 @@ async function handleSend() {
   state.abortController = new AbortController();
   const signal = state.abortController.signal;
 
-  // 🚨 CALLBACK PARA EL STREAMING 🚨
   const onChunk = (chunk, agentName, avatar) => {
     if (!activeStreamingEl || activeStreamingAgent !== agentName) {
       if (activeStreamingEl) activeStreamingEl.classList.remove('thinking');
@@ -348,7 +384,6 @@ async function handleSend() {
     if (isUserAtBottom()) messagesEl.scrollTop = messagesEl.scrollHeight;
   };
 
-  // 🚨 CALLBACK AL TERMINAR DE HABLAR 🚨
   const onMessage = (m) => {
     if (activeStreamingEl) {
       const textEl = activeStreamingEl.querySelector('.msg-text');
@@ -357,7 +392,7 @@ async function handleSend() {
       activeStreamingEl = null;
       activeStreamingAgent = null;
     } else {
-      appendMessage(m); // Si no hubo streaming (respaldo)
+      appendMessage(m);
     }
     state.history.push({ role: 'assistant', ...m });
   };
@@ -366,14 +401,16 @@ async function handleSend() {
     if (modeSelect.value === 'directed') {
       const agentId = agentSelect.value;
       if (!agentId) { alert('Selecciona un agente.'); setRunning(false); return; }
+      
       await runDirected({
         agentId, userText: text, history: state.history.slice(0, -1),
-        onMessage, onChunk
+        onMessage, onChunk,
+        selectedAgentIds: room.agentIds // 🚨 Pasamos los agentes presentes en la sala
       });
     } else {
       await runAutonomous({
         history: state.history,
-        selectedAgentIds: room.agentIds,
+        selectedAgentIds: room.agentIds, // 🚨 Pasamos los agentes presentes en la sala
         maxRounds: Number(maxRoundsInput.value) || 3,
         onMessage, onChunk,
         onStatus: (s) => { roomStatusEl.textContent = s; },
