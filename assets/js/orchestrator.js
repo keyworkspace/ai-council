@@ -1,5 +1,5 @@
 import { chat } from './api.js';
-import { getAgentById, AGENTS } from './agents.js'; // Importamos AGENTS para saber quiénes faltan
+import { getAgentById, AGENTS } from './agents.js';
 
 function sanitizeText(text) {
   if (!text) return '';
@@ -8,31 +8,32 @@ function sanitizeText(text) {
   return clean.trim();
 }
 
-// 🚨 CONSTRUCTOR DE CONTEXTO CON CONCIENCIA DE SALA 🚨
-function buildMessages(agent, history, activeAgentIds, extraInstruction = '') {
+function buildMessages(agent, history, activeAgentIds) {
   const activeNames = AGENTS.filter(a => activeAgentIds.includes(a.id)).map(a => a.name).join(', ');
   const inactiveNames = AGENTS.filter(a => !activeAgentIds.includes(a.id) && a.active).map(a => a.name).join(', ');
   
   let sysContent = agent.systemPrompt;
-  
-  // Inyectamos quién está y quién no
-  sysContent += `\n\n[CONTEXTO DE LA SALA]: Estás en una sesión junto a: ${activeNames}. Los siguientes agentes NO están conectados en esta sesión: ${inactiveNames || 'Ninguno'}.`;
-  
-  if (extraInstruction) {
-    sysContent += `\n\n[INSTRUCCIÓN ESPECIAL PARA ESTE TURNO]: ${extraInstruction}`;
-  }
+  sysContent += `\n\n[CONTEXTO DE LA SALA]: Estás en una sesión junto a: ${activeNames}. Los que NO están conectados son: ${inactiveNames || 'Ninguno'}.`;
+  sysContent += `\n[INSTRUCCIÓN]: Lee atentamente el historial de la conversación que te acompaña. Tienes memoria de todo lo que se ha hablado en esta sesión.`;
 
   const sys = { role: 'system', content: sysContent };
   
+  // 🚨 MEMORIA A LARGO PLAZO (Últimos 25 mensajes) 🚨
   let contextToSend = history;
-  if (history.length > 8) contextToSend = history.slice(-8);
+  if (history.length > 25) {
+    contextToSend = history.slice(-25);
+  }
 
+  // 🚨 FORMATO DE TRANSCRIPCIÓN CLARO (Sin corchetes) 🚨
   const dialogue = contextToSend.map(m => {
     const safeText = sanitizeText(m.text);
-    const speaker = m.role === 'user' ? 'USUARIO' : m.agentName;
+    const speaker = m.role === 'user' ? 'Usuario' : m.agentName;
+    
+    // Usamos el rol 'assistant' para las IAs y 'user' para el humano.
+    // El nombre va en el texto para que sepan quién es quién.
     return {
       role: m.role === 'user' ? 'user' : 'assistant',
-      content: `[${speaker}]: ${safeText}`,
+      content: `${speaker}: ${safeText}`,
     };
   });
   
@@ -56,14 +57,14 @@ function isFarewell(text) {
   return words.some(w => lower.includes(w));
 }
 
-async function agentSpeak(agent, currentHistory, activeAgentIds, onMessage, onStatus, statusMsg, signal, onChunk, extraInstruction = '') {
+async function agentSpeak(agent, currentHistory, activeAgentIds, onMessage, onStatus, statusMsg, signal, onChunk) {
   if (signal?.aborted) return { text: '', aborted: true };
   onStatus(statusMsg);
   
   try {
     const { text } = await chat({
       provider: agent.provider, model: agent.model,
-      messages: buildMessages(agent, currentHistory, activeAgentIds, extraInstruction), 
+      messages: buildMessages(agent, currentHistory, activeAgentIds), 
       temperature: agent.temperature,
     }, (chunk) => {
       if (onChunk) onChunk(chunk, agent.name, agent.avatar);
@@ -99,34 +100,26 @@ export async function runAutonomous({ history, selectedAgentIds, maxRounds, onMe
   const director = agents.find(a => a.id === 'director');
 
   if (isFarewell(lastUserMsg)) {
-    if (director) {
-      await agentSpeak(director, currentHistory, selectedAgentIds, onMessage, onStatus, `J.A.R.V.I.S. se despide`, signal, onChunk);
-    }
+    if (director) await agentSpeak(director, currentHistory, selectedAgentIds, onMessage, onStatus, `J.A.R.V.I.S. se despide`, signal, onChunk);
     return; 
   }
 
   const requestedId = detectRequestedAgent(lastUserMsg);
   if (requestedId) {
     const targetAgent = agents.find(a => a.id === requestedId);
-    
     if (targetAgent) {
-      // El agente solicitado SÍ está en la sala
       onStatus(`Llamando a ${targetAgent.name}...`);
       await agentSpeak(targetAgent, currentHistory, selectedAgentIds, onMessage, onStatus, `${targetAgent.name} responde`, signal, onChunk);
       return; 
     } else {
-      // 🚨 EL AGENTE SOLICITADO NO ESTÁ EN LA SALA 🚨
       const missingAgent = getAgentById(requestedId);
-      const responder = director || agents[0]; // El director o el primero disponible responde
+      const responder = director || agents[0]; 
       onStatus(`Avisando que ${missingAgent.name} no está...`);
-      const instruction = `El usuario llamó a ${missingAgent.name}, pero está desconectado de esta sala. Dile amablemente que ${missingAgent.name} no está presente y ofrécele ayuda en su nombre.`;
-      
-      await agentSpeak(responder, currentHistory, selectedAgentIds, onMessage, onStatus, `${responder.name} interviene`, signal, onChunk, instruction);
+      await agentSpeak(responder, currentHistory, selectedAgentIds, onMessage, onStatus, `${responder.name} interviene`, signal, onChunk);
       return;
     }
   }
 
-  // Debate normal...
   const order = ['director', 'analista', 'critico', 'estratega'];
   let startIndex = 0;
   const lastAssistant = [...history].reverse().find(m => m.role === 'assistant');
