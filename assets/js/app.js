@@ -72,7 +72,10 @@ async function selectRoom(id) {
   state.currentRoomId = id;
   state.history = room.history || [];
   roomNameEl.textContent = room.name;
-  roomTopicEl.textContent = room.topic;
+  
+  // Si no hay tema (porque ahora no lo pedimos al crear), mostramos un texto por defecto
+  roomTopicEl.textContent = room.topic || 'Contexto inferido del primer mensaje';
+  
   roomStatusEl.textContent = room.status || 'En espera';
   roomStatusEl.classList.toggle('active', room.status === 'Activa');
   maxRoundsInput.value = room.maxRounds || 3;
@@ -133,6 +136,7 @@ async function persistCurrentRoom() {
 }
 
 function bindEvents() {
+  // Crear Sala (Solo pide nombre ahora)
   $('#btn-new-room').onclick = () => {
     try {
       if (typeof dialogRoom.showModal === 'function') {
@@ -142,9 +146,7 @@ function bindEvents() {
     } catch (e) {
       const name = prompt('Nombre de la sala:');
       if (!name) return;
-      const topic = prompt('Tema de discusión:');
-      if (!topic) return;
-      createManualRoom(name, topic);
+      createManualRoom(name);
     }
   };
 
@@ -153,13 +155,27 @@ function bindEvents() {
   $('#form-room').onsubmit = async (e) => {
     e.preventDefault();
     const name = $('#input-room-name').value.trim();
-    const topic = $('#input-room-topic').value.trim();
     const checked = [...document.querySelectorAll('#agent-checkboxes input:checked')].map(c => c.value);
-    if (!name || !topic || !checked.length) return;
+    if (!name || !checked.length) return;
     
-    await createManualRoom(name, topic, checked);
+    await createManualRoom(name, checked);
     if (dialogRoom.close) dialogRoom.close();
     $('#form-room').reset();
+  };
+
+  // Botón para Renombrar Sala
+  $('#btn-edit-room-name').onclick = async () => {
+    if (!state.currentRoomId || state.isRunning) return;
+    const room = state.rooms.find(r => r.id === state.currentRoomId);
+    if (!room) return;
+    
+    const newName = prompt('Nuevo nombre para la sala:', room.name);
+    if (newName && newName.trim() !== '' && newName !== room.name) {
+      room.name = newName.trim();
+      await saveRoom(room);
+      roomNameEl.textContent = room.name;
+      renderRoomList();
+    }
   };
 
   $('#btn-delete-room').onclick = async () => {
@@ -201,10 +217,11 @@ function bindEvents() {
   };
 }
 
-async function createManualRoom(name, topic, agentIds = null) {
+async function createManualRoom(name, agentIds = null) {
   const newRoom = {
     id: crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(),
-    name, topic,
+    name: name,
+    topic: '', // Ya no pedimos tema, quedará vacío
     agentIds: agentIds || getActiveAgents().map(a => a.id),
     mode: 'autonomous',
     maxRounds: 3,
@@ -247,7 +264,7 @@ async function handleSend() {
     const newRoom = {
       id: crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(),
       name: autoName,
-      topic: text,
+      topic: '', 
       agentIds: getActiveAgents().map(a => a.id),
       mode: 'autonomous',
       maxRounds: 3,
@@ -262,7 +279,7 @@ async function handleSend() {
     state.history = [];
     
     roomNameEl.textContent = newRoom.name;
-    roomTopicEl.textContent = newRoom.topic;
+    roomTopicEl.textContent = 'Contexto inferido';
     updateAgentSelect(newRoom.agentIds);
     renderMessages();
     renderRoomList();
