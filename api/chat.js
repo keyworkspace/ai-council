@@ -11,7 +11,6 @@ const FALLBACK_MODELS = {
   gemini: ['gemini-3.8-flash', 'gemini-3.6-flash']
 };
 
-// 🚨 FUNCIÓN PARA ESPERAR (Evita el bloqueo de Groq) 🚨
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 export default async function handler(req) {
@@ -30,9 +29,12 @@ export default async function handler(req) {
   if (url.pathname === '/api/chat' && req.method === 'POST') {
     try {
       const { provider, model, messages, temperature = 0.5 } = await req.json();
+      
       let safeMessages = messages;
-      if (messages.reduce((acc, m) => acc + (m.content?.length || 0), 0) > 30000) {
-        safeMessages = [messages[0], ...messages.slice(-5)];
+      // 🚨 LÍMITE AMPLIADO A 80K CARACTERES Y MANTENIENDO MÁS CONTEXTO 🚨
+      const totalChars = messages.reduce((acc, m) => acc + (m.content?.length || 0), 0);
+      if (totalChars > 80000) {
+        safeMessages = [messages[0], ...messages.slice(-15)];
       }
 
       let resultText = '';
@@ -42,10 +44,10 @@ export default async function handler(req) {
         if (apiKey) {
           for (const currentModel of FALLBACK_MODELS.groq) {
             let attempts = 0;
-            while (attempts < 2) { // Hasta 2 reintentos si se satura
+            while (attempts < 2) {
               try {
                 const groqController = new AbortController();
-                const timeout = setTimeout(() => groqController.abort(), 10000);
+                const timeout = setTimeout(() => groqController.abort(), 15000);
 
                 const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
                   method: 'POST',
@@ -61,15 +63,12 @@ export default async function handler(req) {
                     headers: { ...CORS_HEADERS, 'Content-Type': 'text/event-stream' }
                   });
                 } else if (res.status === 429) {
-                  // 🚨 Si Groq dice "Too Many Requests", esperamos 1.5s y reintentamos 🚨
-                  console.warn(`Groq Rate Limit. Reintentando en 1.5s...`);
                   await sleep(1500);
                   attempts++;
                 } else {
-                  break; // Si es otro error, pasamos al respaldo de Gemini
+                  break; 
                 }
               } catch (e) {
-                console.warn(`Fallo en Groq (${currentModel}): ${e.message}`);
                 break; 
               }
             }
@@ -77,7 +76,6 @@ export default async function handler(req) {
         }
       }
 
-      // ── RESPALDO CON GEMINI ──
       const geminiKey = process.env.GEMINI_API_KEY;
       if (geminiKey) {
         for (const currentModel of FALLBACK_MODELS.gemini) {
@@ -107,7 +105,7 @@ export default async function handler(req) {
         }
       }
 
-      throw new Error('Servidores de IA saturados. Intenta de nuevo en unos segundos.');
+      throw new Error('Servidores de IA saturados. Intenta de nuevo.');
 
     } catch (err) {
       return new Response(JSON.stringify({ error: err.message }), {
